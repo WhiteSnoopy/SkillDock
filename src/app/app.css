@@ -1,21 +1,21 @@
 :root {
-  --bg-top: #f4f8ff;
-  --bg-bottom: #e8eef8;
+  --bg-top: #fefcfa;
+  --bg-bottom: #f8f4f0;
   --panel: #ffffff;
-  --ink: #1a2435;
-  --muted: #5e6f85;
-  --line: #d2dbe8;
-  --line-strong: #bdc8d8;
-  --primary: #0a5fb4;
-  --primary-strong: #084d93;
-  --primary-soft: #e9f2ff;
-  --success: #1f8051;
-  --error: #b33636;
-  --warning: #9c6500;
-  --shadow-soft: 0 12px 28px rgba(18, 34, 60, 0.08);
-  --shadow-panel: 0 22px 48px rgba(17, 35, 67, 0.12);
-  --hero-from: rgba(9, 97, 181, 0.1);
-  --hero-to: rgba(79, 136, 197, 0.06);
+  --ink: #2d2520;
+  --muted: #7a6b5e;
+  --line: #e8ddd4;
+  --line-strong: #d9ccc0;
+  --primary: #c4704a;
+  --primary-strong: #a85a38;
+  --primary-soft: #fdf4f0;
+  --success: #4a8c5e;
+  --error: #c45a4a;
+  --warning: #c49a4a;
+  --shadow-soft: 0 8px 24px rgba(45, 37, 32, 0.06);
+  --shadow-panel: 0 16px 40px rgba(45, 37, 32, 0.1);
+  --hero-from: rgba(196, 112, 74, 0.08);
+  --hero-to: rgba(196, 112, 74, 0.04);
   --font-sans-cjk:
     -apple-system,
     BlinkMacSystemFont,
@@ -126,8 +126,8 @@ body {
   font-kerning: normal;
   text-rendering: optimizeLegibility;
   background:
-    radial-gradient(1400px 700px at 6% -10%, rgba(10, 95, 180, 0.12), transparent 70%),
-    radial-gradient(900px 500px at 96% 6%, rgba(86, 143, 202, 0.08), transparent 72%),
+    radial-gradient(1200px 600px at 8% -8%, rgba(196, 112, 74, 0.06), transparent 65%),
+    radial-gradient(800px 400px at 92% 8%, rgba(196, 154, 74, 0.05), transparent 70%),
     linear-gradient(180deg, var(--bg-top) 0%, var(--bg-bottom) 100%);
 }
 
@@ -169,12 +169,12 @@ h6 {
 .shell-hero {
   position: relative;
   overflow: hidden;
-  border: 1px solid #cfdcf0;
+  border: 1px solid var(--line);
   border-radius: 14px;
   padding: 10px 14px;
   background:
-    linear-gradient(180deg, rgba(233, 242, 255, 0.92) 0%, rgba(255, 255, 255, 0.9) 100%);
-  box-shadow: 0 8px 18px rgba(18, 34, 60, 0.06);
+    linear-gradient(180deg, rgba(253, 244, 240, 0.92) 0%, rgba(255, 255, 255, 0.9) 100%);
+  box-shadow: var(--shadow-soft);
   animation: rise-in 320ms ease both;
 }
 
@@ -265,7 +265,7 @@ h6 {
 .primary-tabs {
   width: 100%;
   padding: 5px;
-  border: 1px solid #b9cde8;
+  border: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.92);
   border-radius: 13px;
   position: relative;
@@ -282,10 +282,10 @@ h6 {
 }
 
 .primary-tabs .btn-tab-active {
-  color: #0b4f95;
-  border-color: rgba(10, 95, 180, 0.44);
-  background: linear-gradient(180deg, #ffffff 0%, #f4f8ff 100%);
-  box-shadow: 0 9px 18px rgba(6, 68, 128, 0.14);
+  color: var(--primary-strong);
+  border-color: rgba(196, 112, 74, 0.35);
+  background: linear-gradient(180deg, #ffffff 0%, #fdf8f6 100%);
+  box-shadow: 0 6px 14px rgba(196, 112, 74, 0.12);
 }
 
 .primary-tabs-standalone {
@@ -417,8 +417,8 @@ h6 {
 
 .btn-lang-active {
   color: var(--primary);
-  border-color: rgba(10, 95, 180, 0.35);
-  background: #eef5ff;
+  border-color: rgba(196, 112, 74, 0.3);
+  background: #fdf6f3;
 }
 
 .column-gap {
@@ -483,16 +483,16 @@ h6 {
   left: 0;
   right: 0;
   top: 0;
-  height: 4px;
-  background: linear-gradient(90deg, #3a8fdf, #8cbdfa);
+  height: 3px;
+  background: linear-gradient(90deg, #c4704a, #d4936d);
 }
 
 .metric-card:nth-child(2)::before {
-  background: linear-gradient(90deg, #4aa3a1, #91d7d6);
+  background: linear-gradient(90deg, #c49a4a, #d4b46d);
 }
 
 .metric-card:nth-child(3)::before {
-  background: linear-gradient(90deg, #6771d9, #9ca6f5);
+  background: linear-gradient(90deg, #8a7a6a, #a99a8a);
 }
 
 .metric-label {
@@ -614,7 +614,7 @@ h6 {
   color: #fff;
   background: var(--primary);
   border-color: var(--primary);
-  box-shadow: 0 8px 16px rgba(10, 95, 180, 0.25);
+  box-shadow: 0 4px 12px rgba(196, 112, 74, 0.2);
 }
 
 .btn-primary:hover:not(:disabled) {
@@ -624,12 +624,12 @@ h6 {
 
 .btn-secondary {
   color: var(--primary);
-  border-color: rgba(10, 95, 180, 0.32);
+  border-color: rgba(196, 112, 74, 0.28);
   background: var(--primary-soft);
 }
 
 .btn-secondary:hover:not(:disabled) {
-  border-color: rgba(10, 95, 180, 0.58);
+  border-color: rgba(196, 112, 74, 0.45);
 }
 
 .btn-ghost {
@@ -663,9 +663,9 @@ h6 {
 
 .btn-tab-active {
   color: var(--primary);
-  border-color: rgba(10, 95, 180, 0.38);
+  border-color: rgba(196, 112, 74, 0.32);
   background: #fff;
-  box-shadow: 0 8px 18px rgba(6, 68, 128, 0.12);
+  box-shadow: 0 4px 12px rgba(196, 112, 74, 0.1);
 }
 
 .health {
