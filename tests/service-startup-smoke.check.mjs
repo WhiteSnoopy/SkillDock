@@ -24,6 +24,9 @@ class MockLocalApiService {
     this.offline = false;
     this.sources = [];
     this.skillsBySource = {};
+    this.generalSettings = {
+      teamRepoUrl: "https://github.com/org/default-release-repo"
+    };
   }
 
   async start() {
@@ -49,6 +52,35 @@ class MockLocalApiService {
     if (method === "POST" && route === "/api/admin/offline") {
       this.offline = Boolean(payload?.offline);
       return { status: 200, json: { offline: this.offline } };
+    }
+
+    if (method === "GET" && route === "/api/settings/general") {
+      return { status: 200, json: { ...this.generalSettings } };
+    }
+
+    if (method === "PUT" && route === "/api/settings/general") {
+      const settings = payload?.settings ?? payload ?? {};
+      const teamRepoUrl = String(settings.teamRepoUrl ?? "").trim();
+      if (!teamRepoUrl) {
+        return {
+          status: 422,
+          json: {
+            code: "VALIDATION_ERROR",
+            message: "teamRepoUrl is required"
+          }
+        };
+      }
+      if (!isHttpsUrl(teamRepoUrl)) {
+        return {
+          status: 422,
+          json: {
+            code: "VALIDATION_ERROR",
+            message: "teamRepoUrl must use HTTPS"
+          }
+        };
+      }
+      this.generalSettings.teamRepoUrl = teamRepoUrl;
+      return { status: 200, json: { ...this.generalSettings } };
     }
 
     if (method === "GET" && route === "/api/settings/skills/sources") {
@@ -245,6 +277,7 @@ async function validateTauriRouteContract() {
   );
   const requiredRoutes = [
     "/api/health",
+    "/api/settings/general",
     "/api/settings/skills/sources",
     "/api/market/sync",
     "/api/market/skills",
@@ -265,6 +298,24 @@ const service = new MockLocalApiService();
 const boot = await service.start();
 assert(boot.status === 200, "Startup health check should return 200");
 assert(boot.json.ready === true, "Startup health check should report ready=true");
+
+const readGeneralSettings = await service.request("GET", "/api/settings/general");
+assert(readGeneralSettings.status === 200, "General settings query should return 200");
+assert(
+  readGeneralSettings.json.teamRepoUrl === "https://github.com/org/default-release-repo",
+  "General settings should return default teamRepoUrl"
+);
+
+const updateGeneralSettings = await service.request("PUT", "/api/settings/general", {
+  settings: {
+    teamRepoUrl: "https://github.com/org/team-release-repo"
+  }
+});
+assert(updateGeneralSettings.status === 200, "General settings update should return 200");
+assert(
+  updateGeneralSettings.json.teamRepoUrl === "https://github.com/org/team-release-repo",
+  "General settings should keep updated teamRepoUrl"
+);
 
 const createSource = await service.request("PUT", "/api/settings/skills/sources", {
   source: {

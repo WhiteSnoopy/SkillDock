@@ -1,6 +1,8 @@
 pub fn register_desktop_commands() -> tauri::Builder<tauri::Wry> {
     tauri::Builder::default().invoke_handler(tauri::generate_handler![
         crate::commands::desktop::local_api_health,
+        crate::commands::desktop::get_general_settings,
+        crate::commands::desktop::update_general_settings,
         crate::commands::desktop::list_repo_sources,
         crate::commands::desktop::check_repo_source,
         crate::commands::desktop::upsert_repo_source,

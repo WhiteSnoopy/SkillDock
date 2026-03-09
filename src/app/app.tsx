@@ -1,4 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { KeyboardEvent } from "react";
+import { fetchGeneralSettings, updateGeneralSettings } from "../lib/desktop-api";
 import { MarketPage } from "../pages/market-page";
 import { LocalSkillsPage } from "../pages/local-skills-page";
 import { SkillCampPage } from "../pages/skill-camp-page";
@@ -9,6 +11,7 @@ import "./app.css";
 import "./redesign.css";
 
 type Page = "market" | "local" | "camp" | "release";
+const PAGE_ORDER: Page[] = ["market", "local", "camp", "release"];
 
 const APP_TEXT = {
   zh: {
@@ -20,16 +23,24 @@ const APP_TEXT = {
       camp: "创作新技能、沉淀模板、规范产物交付。",
       release: "按发布流程预检并创建可审计的发布 PR。"
     },
+    boardTitle: "看板",
     navAria: "主导航",
     tabs: {
       market: "市场",
       local: "本地 Skill 管理",
-      camp: "Skill 创造营",
+      camp: "技能创造营",
       release: "发布中心"
     },
     settings: "通用设置",
     settingsTitle: "应用设置",
     language: "应用语言",
+    teamRepoHint: "发布中心后续会使用这里配置的仓库地址作为目标仓库。",
+    teamRepoUrl: "团队仓库地址（GitHub）",
+    settingsSave: "保存配置",
+    settingsSaving: "保存中...",
+    settingsSaved: "已保存，后续发布将使用该仓库地址。",
+    settingsLoadFailed: "加载通用配置失败",
+    settingsInvalidRepoUrl: "请输入有效的 GitHub HTTPS 仓库地址",
     close: "关闭"
   },
   en: {
@@ -41,6 +52,7 @@ const APP_TEXT = {
       camp: "Create new skills, iterate templates, and standardize delivery.",
       release: "Run release checks and create auditable release PRs."
     },
+    boardTitle: "Boards",
     navAria: "Main navigation",
     tabs: {
       market: "Market",
@@ -51,15 +63,116 @@ const APP_TEXT = {
     settings: "Settings",
     settingsTitle: "App Settings",
     language: "App Language",
+    teamRepoHint: "Release flows will use this repository URL as the publishing target.",
+    teamRepoUrl: "Team Repository URL (GitHub)",
+    settingsSave: "Save",
+    settingsSaving: "Saving...",
+    settingsSaved: "Saved. Subsequent releases will use this repository URL.",
+    settingsLoadFailed: "Failed to load general settings",
+    settingsInvalidRepoUrl: "Enter a valid GitHub HTTPS repository URL",
     close: "Close"
   }
 } as const;
+
+function getErrorMessage(raw: unknown, fallback: string): string {
+  if (raw && typeof raw === "object" && "message" in raw) {
+    const message = String((raw as { message?: unknown }).message ?? "").trim();
+    if (message) return message;
+  }
+  if (raw instanceof Error && raw.message.trim()) {
+    return raw.message.trim();
+  }
+  return fallback;
+}
+
+function isValidGithubRepoUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== "https:") return false;
+    if (parsed.hostname !== "github.com" && parsed.hostname !== "www.github.com") return false;
+    return parsed.pathname.split("/").filter(Boolean).length >= 2;
+  } catch {
+    return false;
+  }
+}
+
+function renderTabIcon(page: Page) {
+  switch (page) {
+    case "market":
+      return (
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M3.5 7.4h13l-1 8.4H4.5l-1-8.4Z" />
+          <path d="M7 7.4V6a3 3 0 0 1 6 0v1.4" />
+        </svg>
+      );
+    case "local":
+      return (
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M2.9 6.9h5l1.4 1.8h8.1v6.5a2 2 0 0 1-2 2H4.9a2 2 0 0 1-2-2V6.9Z" />
+          <path d="M2.9 6.9a2 2 0 0 1 2-2h2.5l1.2 2h8.8" />
+        </svg>
+      );
+    case "camp":
+      return (
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M4.4 15.6l7.9-7.9" />
+          <path d="M10.8 4.1l.8 1.6 1.7.3-1.2 1.2.3 1.7-1.6-.9-1.6.9.3-1.7L8.3 6l1.7-.3.8-1.6Z" />
+          <path d="M13.6 12.3l.5 1 .9.2-.7.7.2 1-.9-.5-.9.5.2-1-.7-.7.9-.2.5-1Z" />
+          <circle cx="4.2" cy="15.8" r="1.2" />
+        </svg>
+      );
+    case "release":
+      return (
+        <svg viewBox="0 0 20 20" aria-hidden="true">
+          <path d="M12.8 5.1c1.8.4 3.2 1.8 3.6 3.6L12 13.1 6.9 8l4.4-4.4c.4.4 1 .9 1.5 1.5Z" />
+          <circle cx="11.8" cy="8.3" r="1.2" />
+          <path d="M8 12 5.1 14.9" />
+          <path d="M6.5 9.9 4.2 10.4 3.4 8.6l2.3-.5" />
+          <path d="M9.8 13.5 9.3 15.8l1.8.8.5-2.3" />
+        </svg>
+      );
+  }
+}
 
 export function App() {
   const [page, setPage] = useState<Page>("market");
   const [locale, setLocale] = useState<Locale>(resolveInitialLocale);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [teamRepoUrl, setTeamRepoUrl] = useState("");
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsError, setSettingsError] = useState("");
+  const [settingsSaved, setSettingsSaved] = useState(false);
   const text = APP_TEXT[locale];
+  const tabs = useMemo(() => PAGE_ORDER.map((key) => ({
+    key,
+    label: text.tabs[key]
+  })), [text.tabs]);
+
+  const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, current: Page) => {
+    const index = PAGE_ORDER.indexOf(current);
+    if (index < 0) {
+      return;
+    }
+
+    if (event.key === "ArrowDown" || event.key === "ArrowRight" || event.key === "ArrowUp" || event.key === "ArrowLeft") {
+      event.preventDefault();
+      const direction = event.key === "ArrowDown" || event.key === "ArrowRight" ? 1 : -1;
+      const nextIndex = (index + direction + PAGE_ORDER.length) % PAGE_ORDER.length;
+      setPage(PAGE_ORDER[nextIndex]);
+      return;
+    }
+
+    if (event.key === "Home") {
+      event.preventDefault();
+      setPage(PAGE_ORDER[0]);
+      return;
+    }
+
+    if (event.key === "End") {
+      event.preventDefault();
+      setPage(PAGE_ORDER[PAGE_ORDER.length - 1]);
+    }
+  };
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -70,66 +183,107 @@ export function App() {
     }
   }, [locale]);
 
+  useEffect(() => {
+    if (!settingsOpen) return;
+
+    let active = true;
+    setSettingsSaved(false);
+    setSettingsError("");
+
+    const loadGeneralSettings = async () => {
+      try {
+        const settings = await fetchGeneralSettings();
+        if (!active) return;
+        setTeamRepoUrl(String(settings.teamRepoUrl ?? "").trim());
+      } catch (error) {
+        if (!active) return;
+        setSettingsError(getErrorMessage(error, text.settingsLoadFailed));
+      }
+    };
+
+    void loadGeneralSettings();
+    return () => {
+      active = false;
+    };
+  }, [settingsOpen, text.settingsLoadFailed]);
+
+  const saveGeneralSettings = async () => {
+    const normalized = teamRepoUrl.trim();
+    setSettingsSaved(false);
+    setSettingsError("");
+
+    if (!isValidGithubRepoUrl(normalized)) {
+      setSettingsError(text.settingsInvalidRepoUrl);
+      return;
+    }
+
+    setSettingsSaving(true);
+    try {
+      const saved = await updateGeneralSettings({ teamRepoUrl: normalized });
+      setTeamRepoUrl(String(saved.teamRepoUrl ?? "").trim());
+      setSettingsSaved(true);
+    } catch (error) {
+      setSettingsError(getErrorMessage(error, text.settingsLoadFailed));
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
+
   return (
-    <main className="layout">
-      <section className="shell-frame shell-frame-ultra">
-        <header className="shell-ultra-bar">
-          <div className="shell-brand shell-brand-ultra">
-            <span className="shell-brand-mark" aria-hidden="true" />
-            <h1 className="shell-title-mini">{text.heroTitle}</h1>
-          </div>
-
-          <nav className="primary-tabs primary-tabs-ultra" aria-label={text.navAria}>
-            <button
-              className={page === "market" ? "btn btn-tab btn-tab-active" : "btn btn-tab"}
-              aria-current={page === "market" ? "page" : undefined}
-              onClick={() => setPage("market")}
-            >
-              {text.tabs.market}
-            </button>
-            <button
-              className={page === "local" ? "btn btn-tab btn-tab-active" : "btn btn-tab"}
-              aria-current={page === "local" ? "page" : undefined}
-              onClick={() => setPage("local")}
-            >
-              {text.tabs.local}
-            </button>
-            <button
-              className={page === "camp" ? "btn btn-tab btn-tab-active" : "btn btn-tab"}
-              aria-current={page === "camp" ? "page" : undefined}
-              onClick={() => setPage("camp")}
-            >
-              {text.tabs.camp}
-            </button>
-            <button
-              className={page === "release" ? "btn btn-tab btn-tab-active" : "btn btn-tab"}
-              aria-current={page === "release" ? "page" : undefined}
-              onClick={() => setPage("release")}
-            >
-              {text.tabs.release}
-            </button>
-          </nav>
-
-          <div className="shell-actions">
-            <button className="btn btn-ghost shell-settings-btn" onClick={() => setSettingsOpen(true)} aria-label={text.settings}>
-              <svg className="shell-settings-icon" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M10.8 2.8h2.4l.5 2.2c.5.2 1 .4 1.5.6l2-1.1 1.7 1.7-1.1 2c.3.5.5 1 .7 1.6l2.2.5v2.4l-2.2.5c-.2.6-.4 1.1-.7 1.6l1.1 2-1.7 1.7-2-1.1c-.5.3-1 .5-1.5.6l-.5 2.2h-2.4l-.5-2.2c-.5-.2-1-.4-1.5-.6l-2 1.1-1.7-1.7 1.1-2c-.3-.5-.5-1-.7-1.6L2.8 13v-2.4l2.2-.5c.2-.6.4-1.1.7-1.6l-1.1-2 1.7-1.7 2 1.1c.5-.3 1-.5 1.5-.6l.5-2.2Z" />
-                <circle cx="12" cy="12" r="3.1" />
-              </svg>
-              <span className="shell-settings-label">{text.settings}</span>
-            </button>
-          </div>
+    <main className="layout layout-board">
+      <aside className="shell-rail" aria-label={text.navAria}>
+        <header className="rail-head">
+          <button
+            className="btn btn-ghost rail-avatar-btn"
+            onClick={() => setSettingsOpen(true)}
+            aria-label={text.settings}
+            title={text.settings}
+          >
+            <svg viewBox="0 0 20 20" aria-hidden="true">
+              <circle cx="10" cy="6.6" r="3.2" />
+              <path d="M4.4 15.5c.6-2.5 2.9-4.2 5.6-4.2s5 1.7 5.6 4.2" />
+            </svg>
+            <span className="rail-avatar-dot" />
+          </button>
         </header>
-      </section>
 
-      <section className="page-shell">
-        {page === "market"
-          ? <MarketPage locale={locale} />
-          : page === "local"
-            ? <LocalSkillsPage locale={locale} />
-            : page === "camp"
-              ? <SkillCampPage locale={locale} />
-              : <ReleaseCenterPage locale={locale} />}
+        <nav className="primary-tabs primary-tabs-ultra rail-tabs" aria-label={text.navAria} role="tablist" aria-orientation="vertical">
+            {tabs.map((tab) => (
+              <button
+                key={tab.key}
+                id={`primary-tab-${tab.key}`}
+                role="tab"
+                aria-selected={page === tab.key}
+                aria-controls={`primary-panel-${tab.key}`}
+                aria-label={tab.label}
+                title={tab.label}
+                className={page === tab.key ? "btn btn-tab rail-tab btn-tab-active" : "btn btn-tab rail-tab"}
+                aria-current={page === tab.key ? "page" : undefined}
+                onClick={() => setPage(tab.key)}
+                onKeyDown={(event) => handleTabKeyDown(event, tab.key)}
+              >
+                <span className={`rail-tab-icon rail-tab-icon-${tab.key}`}>{renderTabIcon(tab.key)}</span>
+                <span className="rail-tab-label">{tab.label}</span>
+              </button>
+            ))}
+          </nav>
+      </aside>
+
+      <section
+        className="page-shell board-content"
+        id={`primary-panel-${page}`}
+        role="tabpanel"
+        aria-labelledby={`primary-tab-${page}`}
+      >
+        <div className="board-content-scale">
+          {page === "market"
+            ? <MarketPage locale={locale} />
+            : page === "local"
+              ? <LocalSkillsPage locale={locale} />
+              : page === "camp"
+                ? <SkillCampPage locale={locale} />
+                : <ReleaseCenterPage locale={locale} />}
+        </div>
       </section>
 
       {settingsOpen ? (
@@ -157,6 +311,36 @@ export function App() {
                   EN
                 </button>
               </div>
+            </div>
+            <div className="settings-row">
+              <p>{text.teamRepoHint}</p>
+              <label className="field">
+                <span>{text.teamRepoUrl}</span>
+                <input
+                  value={teamRepoUrl}
+                  placeholder="https://github.com/org/repo"
+                  onChange={(event) => {
+                    setTeamRepoUrl(event.target.value);
+                    setSettingsSaved(false);
+                    if (settingsError) setSettingsError("");
+                  }}
+                />
+              </label>
+              <div className="settings-actions">
+                <button
+                  className="btn btn-primary"
+                  onClick={() => void saveGeneralSettings()}
+                  disabled={settingsSaving}
+                >
+                  {settingsSaving ? text.settingsSaving : text.settingsSave}
+                </button>
+              </div>
+              {settingsError ? (
+                <p className="settings-feedback settings-feedback-error">{settingsError}</p>
+              ) : null}
+              {settingsSaved ? (
+                <p className="settings-feedback settings-feedback-ok">{text.settingsSaved}</p>
+              ) : null}
             </div>
           </aside>
         </div>

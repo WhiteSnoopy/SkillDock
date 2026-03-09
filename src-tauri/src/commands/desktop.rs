@@ -20,6 +20,12 @@ pub struct RepoSource {
 
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
+pub struct GeneralSettings {
+    pub team_repo_url: String,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct RepoSourceProbe {
     pub id: String,
     pub name: String,
@@ -208,6 +214,25 @@ pub async fn list_repo_sources() -> Result<Vec<RepoSource>, GuardedResponseError
 }
 
 #[tauri::command]
+pub async fn get_general_settings() -> Result<GeneralSettings, GuardedResponseError> {
+    let _routed = route_to_local_api(
+        LocalApiRoute {
+            method: "GET",
+            path: "/api/settings/general",
+        },
+        serde_json::json!({}),
+    );
+
+    let response = request_local_api(Method::GET, "/api/settings/general", None).await?;
+    serde_json::from_value(response).map_err(|error| {
+        guarded_error(
+            "UNKNOWN",
+            &format!("Invalid response payload for get_general_settings: {error}"),
+        )
+    })
+}
+
+#[tauri::command]
 pub async fn local_api_health() -> Result<LocalApiHealth, GuardedResponseError> {
     let _routed = route_to_local_api(
         LocalApiRoute {
@@ -229,6 +254,35 @@ pub async fn local_api_health() -> Result<LocalApiHealth, GuardedResponseError> 
             .and_then(|value| value.as_bool())
             .unwrap_or(false),
         local_api: response,
+    })
+}
+
+#[tauri::command]
+pub async fn update_general_settings(
+    settings: GeneralSettings,
+) -> Result<GeneralSettings, GuardedResponseError> {
+    if settings.team_repo_url.trim().is_empty() {
+        return Err(guarded_error(
+            "VALIDATION_ERROR",
+            "teamRepoUrl is required",
+        ));
+    }
+
+    let payload = serde_json::json!({ "settings": settings });
+    let _routed = route_to_local_api(
+        LocalApiRoute {
+            method: "PUT",
+            path: "/api/settings/general",
+        },
+        payload.clone(),
+    );
+
+    let response = request_local_api(Method::PUT, "/api/settings/general", Some(payload)).await?;
+    serde_json::from_value(response).map_err(|error| {
+        guarded_error(
+            "UNKNOWN",
+            &format!("Invalid response payload for update_general_settings: {error}"),
+        )
     })
 }
 

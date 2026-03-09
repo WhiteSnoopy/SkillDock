@@ -1,10 +1,29 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { checkSourceReachability, deleteSource, upsertSource } from "../lib/desktop-api";
 import { useGuardedAction } from "../hooks/use-guarded-action";
 import type { RepoSource, SourceReachability } from "../types/models";
 import { StatusBanner } from "./status-banner";
 
 type Locale = "zh" | "en";
+type ReadmeState = {
+  status: "loading" | "loaded" | "missing";
+  content?: string;
+};
+
+type SourceInterpretation = {
+  summary: string;
+  highlights: string[];
+  keywords: string[];
+  suggestions: string[];
+};
+
+const EN_STOPWORDS = new Set([
+  "the", "and", "for", "with", "that", "this", "when", "from", "into", "then", "than",
+  "have", "has", "will", "your", "you", "are", "was", "were", "can", "could", "should",
+  "use", "using", "used", "user", "users", "their", "them", "they", "its", "our", "not",
+  "any", "all", "also", "just", "more", "less", "only", "does", "done", "via", "per",
+  "repo", "readme", "skill", "skills"
+]);
 
 const SOURCE_TEXT = {
   zh: {
@@ -44,6 +63,20 @@ const SOURCE_TEXT = {
     subDir: "子目录",
     rootDir: "仓库根目录",
     repoIntro: "仓库介绍",
+    readmeLoading: "加载中...",
+    readmeEmpty: "暂无摘要",
+    readMore: "更多",
+    close: "关闭",
+    fullIntroTitle: "完整介绍",
+    oneClickInterpret: "一键解读",
+    refreshInterpret: "重新解读",
+    interpretTitle: "仓库源解读",
+    interpretHint: "点击“一键解读”生成摘要、关键词和使用建议。",
+    interpretSummary: "摘要",
+    interpretHighlights: "关键信息",
+    interpretKeywords: "关键词",
+    interpretSuggestions: "使用建议",
+    fullIntroEmpty: "暂无完整介绍。",
     untested: "未检测",
     edit: "编辑",
     disable: "禁用",
@@ -88,6 +121,20 @@ const SOURCE_TEXT = {
     subDir: "Subdirectory",
     rootDir: "Repository root",
     repoIntro: "Repository intro",
+    readmeLoading: "Loading...",
+    readmeEmpty: "No summary available",
+    readMore: "More",
+    close: "Close",
+    fullIntroTitle: "Full Intro",
+    oneClickInterpret: "One-click Explain",
+    refreshInterpret: "Re-run Explain",
+    interpretTitle: "Source Interpretation",
+    interpretHint: "Click to generate summary, keywords, and usage suggestions.",
+    interpretSummary: "Summary",
+    interpretHighlights: "Highlights",
+    interpretKeywords: "Keywords",
+    interpretSuggestions: "Usage Tips",
+    fullIntroEmpty: "No full introduction available.",
     untested: "Not tested",
     edit: "Edit",
     disable: "Disable",
@@ -168,30 +215,175 @@ function normalizeOptionalSkillsPath(value: string): string | undefined {
   return normalized;
 }
 
-function deriveRepoSlug(url: string): string {
+function parseGithubRepo(repoUrl: string): { owner: string; repo: string } | null {
   try {
-    const parsed = new URL(url);
+    const parsed = new URL(repoUrl);
+    if (parsed.hostname !== "github.com") return null;
     const segments = parsed.pathname.split("/").filter(Boolean);
-    if (segments.length >= 2) {
-      return `${segments[0]}/${segments[1].replace(/\.git$/i, "")}`;
-    }
-    return parsed.hostname;
+    if (segments.length < 2) return null;
+    return {
+      owner: segments[0],
+      repo: segments[1].replace(/\.git$/i, "")
+    };
   } catch {
-    return "repository";
+    return null;
   }
 }
 
-function buildRepoIntro(source: RepoSource, locale: Locale, text: typeof SOURCE_TEXT["zh"] | typeof SOURCE_TEXT["en"]): string {
-  const explicit = String(source.description ?? "").trim();
-  if (explicit) return explicit;
-
-  const repo = deriveRepoSlug(source.repoUrl);
-  const branch = source.repoBranch ?? text.auto;
-  const subDir = source.skillsPath ?? text.rootDir;
-  if (locale === "zh") {
-    return `从 ${repo} 同步 Skill（分支：${branch}，目录：${subDir}）。`;
+function uniqueValues(values: Array<string | undefined>): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const value of values) {
+    const normalized = String(value ?? "").trim();
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    result.push(normalized);
   }
-  return `Sync skills from ${repo} (branch: ${branch}, path: ${subDir}).`;
+  return result;
+}
+
+function buildReadmeCandidates(source: RepoSource): string[] {
+  const repo = parseGithubRepo(source.repoUrl);
+  if (!repo) return [];
+  const branches = uniqueValues([source.repoBranch, "main", "master"]);
+  const files = ["README.md", "Readme.md", "readme.md", "README.MD"];
+  return branches.flatMap((branch) =>
+    files.map((filename) =>
+      `https://raw.githubusercontent.com/${repo.owner}/${repo.repo}/${encodeURIComponent(branch)}/${filename}`
+    )
+  );
+}
+
+async function fetchSourceReadme(source: RepoSource, signal: AbortSignal): Promise<string | null> {
+  const candidates = buildReadmeCandidates(source);
+  if (candidates.length === 0) return null;
+
+  for (const candidate of candidates) {
+    try {
+      const response = await fetch(candidate, {
+        method: "GET",
+        signal,
+        headers: { Accept: "text/plain" }
+      });
+      if (!response.ok) continue;
+      const content = (await response.text()).trim();
+      if (!content) continue;
+      return content.slice(0, 5000);
+    } catch {
+      if (signal.aborted) return null;
+    }
+  }
+  return null;
+}
+
+function toPreviewText(raw: string): string {
+  const normalized = raw
+    .replace(/\r\n/g, "\n")
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/!\[[^\]]*\]\([^)]+\)/g, " ")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^>\s?/gm, "")
+    .replace(/^\s*[-*+]\s+/gm, "")
+    .replace(/^\s*\d+\.\s+/gm, "")
+    .replace(/\n+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) return "";
+  return normalized.slice(0, 320).trimEnd();
+}
+
+function toReadableReadme(raw: string): string {
+  const normalized = raw
+    .replace(/\r\n/g, "\n")
+    .replace(/```[\s\S]*?```/g, "\n")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/!\[[^\]]*\]\([^)]+\)/g, " ")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^>\s?/gm, "")
+    .replace(/^\s*[-*+]\s+/gm, "- ")
+    .replace(/^\s*\d+\.\s+/gm, "- ")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  if (!normalized) return "";
+  return normalized.slice(0, 4200).trimEnd();
+}
+
+function shorten(input: string, maxLen: number): string {
+  const text = input.trim().replace(/\s+/g, " ");
+  if (text.length <= maxLen) return text;
+  return `${text.slice(0, maxLen).trimEnd()}...`;
+}
+
+function firstSentence(input: string): string {
+  const text = input.trim().replace(/\s+/g, " ");
+  const [sentence] = text.split(/[.!?。；;]+/);
+  return sentence?.trim() ?? "";
+}
+
+function extractSourceKeywords(source: RepoSource, sourceText: string): string[] {
+  const merged = `${source.name} ${source.id} ${source.repoUrl} ${sourceText}`.toLowerCase();
+  const tokens = merged.split(/[^a-z0-9\u4e00-\u9fa5-]+/i).filter(Boolean);
+  const picked: string[] = [];
+  for (const token of tokens) {
+    if (picked.length >= 8) break;
+    if (/^\d+$/.test(token)) continue;
+    if (/^[a-z]/.test(token) && (token.length < 3 || EN_STOPWORDS.has(token))) continue;
+    if (!picked.includes(token)) {
+      picked.push(token);
+    }
+  }
+  return picked;
+}
+
+function buildSourceInterpretation(
+  source: RepoSource,
+  fullIntro: string,
+  locale: Locale
+): SourceInterpretation {
+  const primary = firstSentence(fullIntro);
+  const keywords = extractSourceKeywords(source, fullIntro);
+  const branch = source.repoBranch?.trim() || (locale === "zh" ? "自动" : "Auto");
+  const path = source.skillsPath?.trim() || (locale === "zh" ? "仓库根目录" : "Repository root");
+
+  if (locale === "zh") {
+    return {
+      summary: fullIntro
+        ? shorten(fullIntro, 180)
+        : "该仓库源暂无介绍内容，建议先验证可达性后再启用。",
+      highlights: [
+        primary ? `能力焦点：${shorten(primary, 80)}` : `能力焦点：面向 ${source.name} 的技能同步与管理。`,
+        `仓库地址：${source.repoUrl}`,
+        `同步参数：分支 ${branch} / 子目录 ${path}`
+      ],
+      keywords: keywords.length > 0 ? keywords.slice(0, 6) : [source.name, source.id],
+      suggestions: [
+        "先看完整介绍，再决定是否启用该源。",
+        "首次接入建议先在测试环境做一次市场同步。",
+        "若 README 较长，可优先按关键词过滤目标技能。"
+      ]
+    };
+  }
+
+  return {
+    summary: fullIntro
+      ? shorten(fullIntro, 210)
+      : "No source introduction is available. Check reachability before enabling.",
+    highlights: [
+      primary ? `Core focus: ${shorten(primary, 96)}` : `Core focus: synchronize and manage skills from ${source.name}.`,
+      `Repository URL: ${source.repoUrl}`,
+      `Sync params: branch ${branch} / path ${path}`
+    ],
+    keywords: keywords.length > 0 ? keywords.slice(0, 6) : [source.name, source.id],
+    suggestions: [
+      "Read the full intro first, then decide whether to enable this source.",
+      "For first-time onboarding, sync in a staging environment before production.",
+      "If README is long, search by keywords to narrow target skills."
+    ]
+  };
 }
 
 export function SourceManager(props: {
@@ -212,6 +404,10 @@ export function SourceManager(props: {
   const [inlineError, setInlineError] = useState<string | null>(null);
   const [reachability, setReachability] = useState<SourceReachability | null>(null);
   const [reachabilityBySource, setReachabilityBySource] = useState<Record<string, SourceReachability>>({});
+  const [readmeBySource, setReadmeBySource] = useState<Record<string, ReadmeState>>({});
+  const readmeBySourceRef = useRef<Record<string, ReadmeState>>({});
+  const [detailSourceId, setDetailSourceId] = useState<string | null>(null);
+  const [interpretation, setInterpretation] = useState<SourceInterpretation | null>(null);
   const [successMessage, setSuccessMessage] = useState<string>("");
   const { run, error, loading } = useGuardedAction();
 
@@ -219,6 +415,72 @@ export function SourceManager(props: {
     () => props.sources.filter((source) => !source.curated),
     [props.sources]
   );
+  const detailSource = useMemo(
+    () => customSources.find((source) => source.id === detailSourceId) ?? null,
+    [customSources, detailSourceId]
+  );
+  const detailRepoIntro = detailSource ? String(detailSource.description ?? "").trim() : "";
+  const detailReadmeState = detailSource ? readmeBySource[detailSource.id] : undefined;
+  const detailReadableReadme = detailReadmeState?.status === "loaded" && detailReadmeState.content
+    ? toReadableReadme(detailReadmeState.content)
+    : "";
+  const detailFullIntro = useMemo(() => {
+    if (!detailSource) return "";
+    if (detailReadableReadme) {
+      return [detailRepoIntro, detailReadableReadme].filter(Boolean).join("\n\n");
+    }
+    if (detailReadmeState?.status === "loading") {
+      return detailRepoIntro ? `${detailRepoIntro}\n\n${text.readmeLoading}` : text.readmeLoading;
+    }
+    if (detailRepoIntro) return detailRepoIntro;
+    return text.fullIntroEmpty;
+  }, [detailReadableReadme, detailReadmeState?.status, detailRepoIntro, detailSource, text.fullIntroEmpty, text.readmeLoading]);
+
+  useEffect(() => {
+    readmeBySourceRef.current = readmeBySource;
+  }, [readmeBySource]);
+
+  useEffect(() => {
+    setInterpretation(null);
+  }, [detailSourceId, props.locale]);
+
+  useEffect(() => {
+    const candidates = customSources.filter((source) => !readmeBySourceRef.current[source.id]);
+    if (candidates.length === 0) return;
+
+    const controllers: AbortController[] = [];
+    let disposed = false;
+
+    for (const source of candidates) {
+      const controller = new AbortController();
+      controllers.push(controller);
+
+      setReadmeBySource((prev) => {
+        if (prev[source.id]) return prev;
+        return {
+          ...prev,
+          [source.id]: { status: "loading" }
+        };
+      });
+
+      void fetchSourceReadme(source, controller.signal).then((content) => {
+        if (disposed || controller.signal.aborted) return;
+        setReadmeBySource((prev) => ({
+          ...prev,
+          [source.id]: content
+            ? { status: "loaded", content }
+            : { status: "missing" }
+        }));
+      });
+    }
+
+    return () => {
+      disposed = true;
+      for (const controller of controllers) {
+        controller.abort();
+      }
+    };
+  }, [customSources]);
 
   const clearForm = () => {
     setForm({
@@ -337,6 +599,16 @@ export function SourceManager(props: {
     }
   };
 
+  const openSourceDetail = (sourceId: string) => {
+    setDetailSourceId(sourceId);
+    setInterpretation(null);
+  };
+
+  const closeSourceDetail = () => {
+    setDetailSourceId(null);
+    setInterpretation(null);
+  };
+
   return (
     <section className="panel source-manager">
       <div className="panel-header source-heading">
@@ -426,14 +698,11 @@ export function SourceManager(props: {
           </div>
           <ul className="plain-list source-list">
             {customSources.map((source) => {
-              const reachability = reachabilityBySource[source.id];
-              const reachabilityLabel = reachability
-                ? (reachability.reachable ? text.reachable : text.unreachable)
-                : text.untested;
-              const reachabilityClass = reachability
-                ? (reachability.reachable ? "source-status source-reach-ok" : "source-status source-reach-bad")
-                : "source-status source-reach-unknown";
-              const repoIntro = buildRepoIntro(source, props.locale, text);
+              const repoIntro = String(source.description ?? "").trim();
+              const readmeState = readmeBySource[source.id];
+              const readmePreview = readmeState?.status === "loaded" && readmeState.content
+                ? toPreviewText(readmeState.content)
+                : "";
 
               return (
                 <li key={source.id} className="source-item">
@@ -444,25 +713,25 @@ export function SourceManager(props: {
                       <span className={source.enabled ? "source-status source-on" : "source-status source-off"}>
                         {source.enabled ? text.statusEnabled : text.statusDisabled}
                       </span>
-                      <span className={reachabilityClass}>
-                        {text.reachability}: {reachabilityLabel}
-                      </span>
                     </p>
-                    <p className="source-url">{source.repoUrl}</p>
-                    <div className="source-facts">
-                      <p className="source-fact">
-                        <span>{text.branch}</span>
-                        <strong>{source.repoBranch ?? text.auto}</strong>
-                      </p>
-                      <p className="source-fact">
-                        <span>{text.subDir}</span>
-                        <strong>{source.skillsPath ?? text.rootDir}</strong>
-                      </p>
-                      <p className="source-fact source-fact-wide">
-                        <span>{text.repoIntro}</span>
-                        <strong>{repoIntro}</strong>
-                      </p>
-                    </div>
+                    {repoIntro ? <p className="source-intro"><span>{text.repoIntro}</span>{repoIntro}</p> : null}
+                    <section className="source-readme" aria-label="Repository summary">
+                      {readmeState?.status === "loading" ? (
+                        <p className="source-readme-empty">{text.readmeLoading}</p>
+                      ) : readmePreview ? (
+                        <p className="source-readme-content">{readmePreview}</p>
+                      ) : (
+                        <p className="source-readme-empty">{text.readmeEmpty}</p>
+                      )}
+                      <div className="source-readme-footer">
+                        <button
+                          className="btn btn-ghost source-readme-more"
+                          onClick={() => openSourceDetail(source.id)}
+                        >
+                          {text.readMore}
+                        </button>
+                      </div>
+                    </section>
                   </div>
 
                   <div className="source-item-actions">
@@ -479,6 +748,85 @@ export function SourceManager(props: {
           </ul>
         </section>
       </div>
+
+      {detailSource ? (
+        <div className="skill-detail-mask source-detail-mask" onClick={closeSourceDetail}>
+          <aside className="skill-detail-panel source-detail-panel" onClick={(event) => event.stopPropagation()}>
+            <header className="source-detail-header">
+              <div>
+                <h3>{detailSource.name}</h3>
+                <p className="source-detail-path">{detailSource.id}</p>
+              </div>
+              <button className="btn btn-ghost" onClick={closeSourceDetail}>
+                {text.close}
+              </button>
+            </header>
+
+            <div className="source-detail-kpis">
+              <span className="skill-detail-pill">URL: {detailSource.repoUrl}</span>
+              <span className="skill-detail-pill">
+                {text.branch}: {detailSource.repoBranch?.trim() || text.auto}
+              </span>
+              <span className="skill-detail-pill">
+                {text.subDir}: {detailSource.skillsPath?.trim() || text.rootDir}
+              </span>
+            </div>
+
+            <section className="source-detail-intro">
+              <div className="source-detail-intro-header">
+                <h4>{text.fullIntroTitle}</h4>
+              </div>
+              <pre className="source-detail-intro-content">{detailFullIntro}</pre>
+            </section>
+
+            <section className="interpret-panel">
+              <div className="interpret-header">
+                <h4>{text.interpretTitle}</h4>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => setInterpretation(buildSourceInterpretation(detailSource, detailFullIntro, props.locale))}
+                >
+                  {interpretation ? text.refreshInterpret : text.oneClickInterpret}
+                </button>
+              </div>
+              {interpretation ? (
+                <div className="interpret-content">
+                  <article className="interpret-card interpret-card-wide">
+                    <h5>{text.interpretSummary}</h5>
+                    <p>{interpretation.summary}</p>
+                  </article>
+                  <article className="interpret-card">
+                    <h5>{text.interpretHighlights}</h5>
+                    <ul className="interpret-list">
+                      {interpretation.highlights.map((item) => (
+                        <li key={`source-highlight:${item}`}>{item}</li>
+                      ))}
+                    </ul>
+                  </article>
+                  <article className="interpret-card">
+                    <h5>{text.interpretKeywords}</h5>
+                    <ul className="interpret-list">
+                      {interpretation.keywords.map((item) => (
+                        <li key={`source-keyword:${item}`}>{item}</li>
+                      ))}
+                    </ul>
+                  </article>
+                  <article className="interpret-card interpret-card-wide">
+                    <h5>{text.interpretSuggestions}</h5>
+                    <ul className="interpret-list">
+                      {interpretation.suggestions.map((item) => (
+                        <li key={`source-suggestion:${item}`}>{item}</li>
+                      ))}
+                    </ul>
+                  </article>
+                </div>
+              ) : (
+                <p className="panel-subtitle">{text.interpretHint}</p>
+              )}
+            </section>
+          </aside>
+        </div>
+      ) : null}
     </section>
   );
 }

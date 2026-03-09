@@ -11,6 +11,10 @@ export interface RepoSource {
   enabled: boolean;
 }
 
+export interface GeneralSettings {
+  teamRepoUrl: string;
+}
+
 export interface SourceReachability {
   reachable: boolean;
   reason?: string;

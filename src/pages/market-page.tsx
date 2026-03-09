@@ -110,7 +110,6 @@ const MARKET_TEXT = {
     visibleSkills: "可见技能",
     browseTab: "技能浏览",
     sourceTab: "源管理",
-    skillList: "技能列表",
     lastSync: "上次同步",
     notSynced: "尚未同步",
     syncMarket: "同步市场索引",
@@ -166,7 +165,6 @@ const MARKET_TEXT = {
     visibleSkills: "Visible Skills",
     browseTab: "Browse Skills",
     sourceTab: "Source Manager",
-    skillList: "Skill List",
     lastSync: "Last synced",
     notSynced: "Not synced yet",
     syncMarket: "Sync Market Index",
@@ -434,17 +432,6 @@ export function MarketPage(props: { locale: Locale }) {
 
       {view === "catalog" ? (
         <div className="panel market-panel">
-          <div className="row-between market-panel-header">
-            <div>
-              <h3>{text.skillList}</h3>
-              {lastSyncAt ? (
-                <p className="panel-subtitle">{text.lastSync}: {formattedSyncTime}</p>
-              ) : (
-                <p className="panel-subtitle">{text.notSynced}</p>
-              )}
-            </div>
-          </div>
-
           {syncMessage ? <p className="muted-copy market-sync-message">{syncMessage}</p> : null}
           <StatusBanner error={error} loading={loading} locale={locale} />
           <div className="table-toolbar market-toolbar">

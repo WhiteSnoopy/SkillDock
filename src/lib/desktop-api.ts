@@ -1,6 +1,7 @@
 import type {
   BetaReleaseDryRunResponse,
   BetaReleaseRequest,
+  GeneralSettings,
   GuardedError,
   InstallSkillRequest,
   InstallSkillResponse,
@@ -79,6 +80,14 @@ export async function fetchSources(): Promise<RepoSource[]> {
 
 export async function fetchLocalApiHealth(): Promise<LocalApiHealth> {
   return invokeGuarded<LocalApiHealth>("local_api_health");
+}
+
+export async function fetchGeneralSettings(): Promise<GeneralSettings> {
+  return invokeGuarded<GeneralSettings>("get_general_settings");
+}
+
+export async function updateGeneralSettings(settings: GeneralSettings): Promise<GeneralSettings> {
+  return invokeGuarded<GeneralSettings>("update_general_settings", { settings });
 }
 
 export async function upsertSource(source: RepoSource): Promise<RepoSource> {

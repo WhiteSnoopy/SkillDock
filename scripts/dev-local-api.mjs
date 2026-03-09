@@ -21,14 +21,18 @@ const PROJECT_ROOT = path.resolve(SCRIPT_DIR, "..");
 const PERSIST_DIR = path.join(PROJECT_ROOT, ".runtime", "desktop-stack", "local-api");
 const SOURCES_STATE_FILE = path.join(PERSIST_DIR, "sources.json");
 const INSTALLATIONS_STATE_FILE = path.join(PERSIST_DIR, "installations.json");
+const GENERAL_SETTINGS_STATE_FILE = path.join(PERSIST_DIR, "general-settings.json");
 const SKILLS_SSOT_DIR = process.env.SkillDock_SKILLS_SSOT_DIR || path.join(os.homedir(), ".skilldock-skill-agent", "skills");
 const SKILLS_TARGET_DIR = process.env.SkillDock_SKILLS_TARGET_DIR || path.join(os.homedir(), ".codex", "skills");
-const RELEASE_REPO_URL = process.env.SkillDock_RELEASE_REPO_URL || "https://github.com/WhiteSnoopy/Skill-Manage";
-const RELEASE_REPO_BRANCH = process.env.SkillDock_RELEASE_REPO_BRANCH || "main";
+const DEFAULT_RELEASE_REPO_URL = process.env.SkillDock_RELEASE_REPO_URL || "https://github.com/WhiteSnoopy/Skill-Manage";
+const DEFAULT_RELEASE_REPO_BRANCH = process.env.SkillDock_RELEASE_REPO_BRANCH || "main";
 const RELEASE_REPO_DIR = process.env.SkillDock_RELEASE_REPO_DIR || path.join(PERSIST_DIR, "release-repo");
 const RELEASE_GITHUB_TOKEN = String(
   process.env.SkillDock_GITHUB_TOKEN || process.env.GITHUB_TOKEN || process.env.GH_TOKEN || ""
 ).trim();
+const DEFAULT_GENERAL_SETTINGS = Object.freeze({
+  teamRepoUrl: DEFAULT_RELEASE_REPO_URL
+});
 
 if (!Number.isInteger(port) || port <= 0) {
   throw new Error(`Invalid port: ${values.port}`);
@@ -39,6 +43,9 @@ const sources = [];
 const skillsBySource = {};
 const sourceHealthById = {};
 const installations = {};
+const generalSettings = {
+  ...DEFAULT_GENERAL_SETTINGS
+};
 const GITHUB_USER_AGENT = "skilldock-skill-agent-local-api";
 const execFileAsync = promisify(execFile);
 let releaseMutationQueue = Promise.resolve();
@@ -55,6 +62,13 @@ function normalizeSourcePayload(source) {
     skillsPath: normalizeOptionalSkillsPath(source.skillsPath),
     curated: Boolean(source.curated),
     enabled: source.enabled !== false
+  };
+}
+
+function normalizeGeneralSettingsPayload(rawSettings) {
+  if (!rawSettings || typeof rawSettings !== "object") return null;
+  return {
+    teamRepoUrl: String(rawSettings.teamRepoUrl ?? "").trim()
   };
 }
 
@@ -86,6 +100,51 @@ async function persistSources() {
     `${JSON.stringify({ sources }, null, 2)}\n`,
     "utf8"
   );
+}
+
+async function loadPersistedGeneralSettings() {
+  try {
+    const raw = await readFile(GENERAL_SETTINGS_STATE_FILE, "utf8");
+    const parsed = JSON.parse(raw);
+    const normalized = normalizeGeneralSettingsPayload(parsed?.settings ?? parsed);
+    if (!normalized?.teamRepoUrl) {
+      return;
+    }
+    if (!isHttpsUrl(normalized.teamRepoUrl)) {
+      console.warn("[local-api] ignored persisted general settings: teamRepoUrl must use HTTPS");
+      return;
+    }
+    try {
+      parseGithubRepoUrl(normalized.teamRepoUrl);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      console.warn(`[local-api] ignored persisted general settings: ${detail}`);
+      return;
+    }
+    generalSettings.teamRepoUrl = normalized.teamRepoUrl;
+    console.log("[local-api] loaded persisted general settings");
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      console.warn("[local-api] failed to load persisted general settings:", error?.message ?? error);
+    }
+  }
+}
+
+async function persistGeneralSettings() {
+  await mkdir(PERSIST_DIR, { recursive: true });
+  await writeFile(
+    GENERAL_SETTINGS_STATE_FILE,
+    `${JSON.stringify({ settings: generalSettings }, null, 2)}\n`,
+    "utf8"
+  );
+}
+
+function getReleaseRepoConfig() {
+  const repoUrl = String(generalSettings.teamRepoUrl ?? "").trim() || DEFAULT_RELEASE_REPO_URL;
+  return {
+    repoUrl,
+    repoBranch: DEFAULT_RELEASE_REPO_BRANCH
+  };
 }
 
 async function loadPersistedInstallations() {
@@ -963,13 +1022,14 @@ async function readJsonFileOrDefault(filePath, fallbackValue) {
 
 async function ensureReleaseRepoReady() {
   await mkdir(PERSIST_DIR, { recursive: true });
+  const { repoUrl, repoBranch } = getReleaseRepoConfig();
   const repoDir = path.resolve(RELEASE_REPO_DIR);
-  const parsed = parseGithubRepoUrl(RELEASE_REPO_URL);
+  const parsed = parseGithubRepoUrl(repoUrl);
   const gitDir = path.join(repoDir, ".git");
 
   if (!(await pathExists(gitDir))) {
     await rm(repoDir, { recursive: true, force: true });
-    await execFileAsync("git", ["clone", "--branch", RELEASE_REPO_BRANCH, RELEASE_REPO_URL, repoDir], { cwd: PROJECT_ROOT });
+    await execFileAsync("git", ["clone", "--branch", repoBranch, repoUrl, repoDir], { cwd: PROJECT_ROOT });
   } else {
     const remote = (await runGit(["remote", "get-url", "origin"], { cwd: repoDir, allowFailure: true }))
       .replace(/\.git$/i, "")
@@ -977,15 +1037,15 @@ async function ensureReleaseRepoReady() {
     const expected = `https://github.com/${parsed.owner}/${parsed.repo}`.toLowerCase();
     if (!remote || (!remote.includes(`${parsed.owner.toLowerCase()}/${parsed.repo.toLowerCase()}`) && remote !== expected)) {
       await rm(repoDir, { recursive: true, force: true });
-      await execFileAsync("git", ["clone", "--branch", RELEASE_REPO_BRANCH, RELEASE_REPO_URL, repoDir], { cwd: PROJECT_ROOT });
+      await execFileAsync("git", ["clone", "--branch", repoBranch, repoUrl, repoDir], { cwd: PROJECT_ROOT });
     }
   }
 
-  await runGit(["fetch", "origin", RELEASE_REPO_BRANCH], { cwd: repoDir });
-  await runGit(["checkout", RELEASE_REPO_BRANCH], { cwd: repoDir });
-  await runGit(["reset", "--hard", `origin/${RELEASE_REPO_BRANCH}`], { cwd: repoDir });
+  await runGit(["fetch", "origin", repoBranch], { cwd: repoDir });
+  await runGit(["checkout", repoBranch], { cwd: repoDir });
+  await runGit(["reset", "--hard", `origin/${repoBranch}`], { cwd: repoDir });
   await runGit(["clean", "-fd"], { cwd: repoDir });
-  return { repoDir, parsed };
+  return { repoDir, parsed, repoUrl, repoBranch };
 }
 
 function sanitizeBranchSegment(value) {
@@ -1204,7 +1264,7 @@ async function readLocalSkillBundle(request, skillId, version) {
   };
 }
 
-async function buildSkillPublisherAlignedChecklist(request, skillBundle) {
+async function buildSkillPublisherAlignedChecklist(request, skillBundle, releaseRepo) {
   const checklist = [
     {
       id: "skill-frontmatter",
@@ -1216,7 +1276,7 @@ async function buildSkillPublisherAlignedChecklist(request, skillBundle) {
       id: "publish-path",
       title: "发布路径校验（创建分支并提交 PR）",
       status: "passed",
-      detail: `${RELEASE_REPO_URL}#${RELEASE_REPO_BRANCH}`
+      detail: `${releaseRepo.repoUrl}#${releaseRepo.repoBranch}`
     },
     {
       id: "discoverability",
@@ -1229,7 +1289,7 @@ async function buildSkillPublisherAlignedChecklist(request, skillBundle) {
   return checklist;
 }
 
-async function buildBetaReleasePlan(repoDir, request) {
+async function buildBetaReleasePlan(repoDir, request, releaseRepo) {
   const now = new Date().toISOString();
   const skillId = String(request.skillId ?? "").trim();
   const version = String(request.version ?? "").trim();
@@ -1280,7 +1340,7 @@ async function buildBetaReleasePlan(repoDir, request) {
     `- Version: ${version}`,
     `- Release ID: ${releaseId}`,
     `- Requested by: ${requestedBy}`,
-    `- Repository: ${RELEASE_REPO_URL}`,
+    `- Repository: ${releaseRepo.repoUrl}`,
     `- Skill Files: ${skillBundle.targetDir} (${skillBundle.files.length} files)`,
     "",
     "Supervisor approval is required before merge."
@@ -1548,6 +1608,43 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === "GET" && req.url === "/api/settings/general") {
+      sendJson(res, 200, { ...generalSettings });
+      return;
+    }
+
+    if (req.method === "PUT" && req.url === "/api/settings/general") {
+      const body = await readBody(req);
+      const normalized = normalizeGeneralSettingsPayload(body?.settings ?? body);
+      if (!normalized?.teamRepoUrl) {
+        sendJson(res, 422, {
+          code: "VALIDATION_ERROR",
+          message: "teamRepoUrl is required"
+        });
+        return;
+      }
+      if (!isHttpsUrl(normalized.teamRepoUrl)) {
+        sendJson(res, 422, {
+          code: "VALIDATION_ERROR",
+          message: "teamRepoUrl must use HTTPS"
+        });
+        return;
+      }
+      try {
+        parseGithubRepoUrl(normalized.teamRepoUrl);
+      } catch (error) {
+        sendJson(res, 422, {
+          code: "VALIDATION_ERROR",
+          message: error instanceof Error ? error.message : "Invalid GitHub repository URL"
+        });
+        return;
+      }
+      generalSettings.teamRepoUrl = normalized.teamRepoUrl;
+      await persistGeneralSettings();
+      sendJson(res, 200, { ...generalSettings });
+      return;
+    }
+
     if (req.method === "GET" && req.url === "/api/settings/skills/sources") {
       sendJson(res, 200, sources);
       return;
@@ -1806,9 +1903,10 @@ const server = http.createServer(async (req, res) => {
       }
 
       const preview = await withReleaseMutationLock(async () => {
-        const { repoDir } = await ensureReleaseRepoReady();
-        const plan = await buildBetaReleasePlan(repoDir, request);
-        const checklist = await buildSkillPublisherAlignedChecklist(request, plan.skillBundle);
+        const { repoDir, repoUrl, repoBranch } = await ensureReleaseRepoReady();
+        const releaseRepo = { repoUrl, repoBranch };
+        const plan = await buildBetaReleasePlan(repoDir, request, releaseRepo);
+        const checklist = await buildSkillPublisherAlignedChecklist(request, plan.skillBundle, releaseRepo);
         const changedFiles = await computeChangedFiles(repoDir, plan.filesToWrite, plan.skillBundle, plan.cleanupTargets);
         const passedChecks = checklist.filter((item) => item.status === "passed").length;
         const warningChecks = checklist.filter((item) => item.status === "warning").length;
@@ -1817,8 +1915,8 @@ const server = http.createServer(async (req, res) => {
           changedFiles,
           checklist,
           changelogDelta: [
-            `Repository: ${RELEASE_REPO_URL}`,
-            `Base branch: ${RELEASE_REPO_BRANCH}`,
+            `Repository: ${repoUrl}`,
+            `Base branch: ${repoBranch}`,
             `Planned release: ${request.skillId}@${request.version}`,
             `Release ID: ${request.releaseId}`,
             `Skill path: ${request.skillPath}`,
@@ -1856,8 +1954,9 @@ const server = http.createServer(async (req, res) => {
       }
 
       const result = await withReleaseMutationLock(async () => {
-        const { repoDir, parsed } = await ensureReleaseRepoReady();
-        const plan = await buildBetaReleasePlan(repoDir, request);
+        const { repoDir, parsed, repoUrl, repoBranch } = await ensureReleaseRepoReady();
+        const releaseRepo = { repoUrl, repoBranch };
+        const plan = await buildBetaReleasePlan(repoDir, request, releaseRepo);
         const changedFiles = await computeChangedFiles(repoDir, plan.filesToWrite, plan.skillBundle, plan.cleanupTargets);
         if (changedFiles.length === 0) {
           throw new Error("No file changes detected for this beta release request.");
@@ -1885,7 +1984,7 @@ const server = http.createServer(async (req, res) => {
             title: plan.prTitle,
             body: plan.prBody,
             head: branchName,
-            base: RELEASE_REPO_BRANCH
+            base: repoBranch
           });
 
           return {
@@ -1895,15 +1994,15 @@ const server = http.createServer(async (req, res) => {
             prNumber: pr.number,
             warning: typeof pr.warning === "string" ? pr.warning : undefined,
             branch: branchName,
-            repoUrl: RELEASE_REPO_URL,
+            repoUrl,
             bundlePath: plan.skillBundle.targetDir,
             bundledFiles: plan.skillBundle.files.length,
             repoDir: repoDir,
             changedFiles: stagedFiles.map((item) => toPosixPath(item))
           };
         } finally {
-          await runGit(["checkout", RELEASE_REPO_BRANCH], { cwd: repoDir, allowFailure: true });
-          await runGit(["reset", "--hard", `origin/${RELEASE_REPO_BRANCH}`], { cwd: repoDir, allowFailure: true });
+          await runGit(["checkout", repoBranch], { cwd: repoDir, allowFailure: true });
+          await runGit(["reset", "--hard", `origin/${repoBranch}`], { cwd: repoDir, allowFailure: true });
           await runGit(["clean", "-fd"], { cwd: repoDir, allowFailure: true });
         }
       });
@@ -1963,6 +2062,7 @@ server.on("listening", () => {
 
 await loadPersistedSources();
 await loadPersistedInstallations();
+await loadPersistedGeneralSettings();
 server.listen(port, host);
 
 function shutdown(signal) {

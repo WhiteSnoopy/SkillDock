@@ -40,8 +40,6 @@ const VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/;
 
 const TEXT = {
   zh: {
-    title: "单 Skill 发布中心",
-    subtitle: "采用 Skill Publisher 风格流程：选择单个本地 skill，执行预检，最后创建发布 PR。",
     stageTitle: "发布阶段",
     stageProgress: (current: number, total: number) => `阶段 ${current}/${total}`,
     stagePrepareName: "准备发布信息",
@@ -60,7 +58,6 @@ const TEXT = {
     manualPath: "手动填写目录路径",
     browseFolder: "浏览文件夹",
     browsingFolder: "正在打开...",
-    reloadLocal: "刷新本机列表",
     folderMeta: (provider: string, sourceId: string) => `来源: ${provider} · ${sourceId}`,
     folderEmpty: "未检测到本地 skill，可先到“本地 Skill 管理”加载。",
     selectedPath: (value: string) => `当前目录: ${value || "-"}`,
@@ -70,6 +67,8 @@ const TEXT = {
     version: "版本号",
     autoSkillId: "技能 ID（自动）",
     autoMetaHint: "发布 ID 与申请人默认自动生成，无需手动填写。",
+    metaNoteVersion: "版本号建议使用语义化格式，并在 dry run 后保持稳定。",
+    metaNoteSkillId: "技能 ID 会随目录路径自动推导，无需手填。",
 
     checkTitle: "Skill Publisher 对齐检查清单",
     checkDesc: "对齐 skill-publisher 的核心发布前检查；当前仅针对单个 skill，最终创建 PR。",
@@ -86,10 +85,14 @@ const TEXT = {
     changelogDelta: "预检摘要",
     moreFiles: (count: number) => `还有 ${count} 个文件未展开`,
     previewEmptyTitle: "尚未执行预检",
-    previewEmptyDesc: "点击底部固定操作栏的“执行预检”后，这里会展示将提交到仓库的文件清单。",
+    previewEmptyDesc: "点击“执行预检”后，这里会展示将提交到仓库的文件清单。",
 
     publishTitle: "提交单 Skill 发布 PR",
     publishDesc: "不会直接提交到 main，仅为当前这个 skill 创建独立分支并发起 PR。",
+    publishSummarySkillId: "技能 ID",
+    publishSummaryVersion: "版本号",
+    publishSummaryPath: "Skill 目录",
+    publishSummaryPrecheck: "预检状态",
     confirmLabel: "我已确认目录、版本与预检清单一致",
     actionState: (previewReady: boolean, canCreate: boolean) =>
       `预检: ${previewReady ? "已完成" : "未执行"} · 创建 PR: ${canCreate ? "可执行" : "不可执行"}`,
@@ -109,11 +112,14 @@ const TEXT = {
     copyBody: "复制内容",
     copyLink: "复制链接",
     copied: "已复制",
+    publishEmptyTitle: "等待创建发布 PR",
+    publishEmptyDesc: "勾选确认并点击创建按钮后，这里会展示 PR 结果与复制入口。",
+    publishEmptyStepOne: "先在左侧确认目录、版本与预检状态。",
+    publishEmptyStepTwo: "点击“创建该 Skill 的发布 PR”发起发布。",
+    publishEmptyStepThree: "创建完成后可直接复制标题、内容与链接。",
     prCreated: (title: string) => `PR 已创建: ${title}`
   },
   en: {
-    title: "Single-Skill Release Center",
-    subtitle: "Skill Publisher style flow: choose one local skill, run checks, then create a release PR.",
     stageTitle: "Release Stages",
     stageProgress: (current: number, total: number) => `Stage ${current}/${total}`,
     stagePrepareName: "Prepare Inputs",
@@ -132,7 +138,6 @@ const TEXT = {
     manualPath: "Manual folder path",
     browseFolder: "Browse Folder",
     browsingFolder: "Opening...",
-    reloadLocal: "Refresh Local List",
     folderMeta: (provider: string, sourceId: string) => `Source: ${provider} · ${sourceId}`,
     folderEmpty: "No local skill detected. Load it first in Local Skill Management.",
     selectedPath: (value: string) => `Current path: ${value || "-"}`,
@@ -142,6 +147,8 @@ const TEXT = {
     version: "Version",
     autoSkillId: "Skill ID (Auto)",
     autoMetaHint: "Release ID and requester are auto-generated. No manual fields required.",
+    metaNoteVersion: "Use semantic versioning and keep it stable after dry run.",
+    metaNoteSkillId: "Skill ID is inferred from folder path automatically.",
 
     checkTitle: "Skill Publisher Aligned Checklist",
     checkDesc: "Aligned to Skill Publisher's core preflight checks for a single skill; final action is PR creation.",
@@ -158,10 +165,14 @@ const TEXT = {
     changelogDelta: "Precheck Summary",
     moreFiles: (count: number) => `${count} more files hidden`,
     previewEmptyTitle: "Precheck Not Run",
-    previewEmptyDesc: "Run precheck from the sticky action bar below to preview repository file changes.",
+    previewEmptyDesc: "Run precheck to preview repository file changes here.",
 
     publishTitle: "Submit Single-Skill Release PR",
     publishDesc: "No direct push to main. A dedicated branch and PR are created for this single skill.",
+    publishSummarySkillId: "Skill ID",
+    publishSummaryVersion: "Version",
+    publishSummaryPath: "Skill Folder",
+    publishSummaryPrecheck: "Precheck",
     confirmLabel: "I confirm folder, version, and precheck manifest are aligned",
     actionState: (previewReady: boolean, canCreate: boolean) =>
       `Precheck: ${previewReady ? "done" : "not run"} · Create PR: ${canCreate ? "ready" : "blocked"}`,
@@ -181,6 +192,11 @@ const TEXT = {
     copyBody: "Copy Body",
     copyLink: "Copy Link",
     copied: "Copied",
+    publishEmptyTitle: "Waiting to Create PR",
+    publishEmptyDesc: "After confirmation and creating PR, result details and copy actions appear here.",
+    publishEmptyStepOne: "Confirm folder, version, and precheck status on the left.",
+    publishEmptyStepTwo: "Click “Create PR for This Skill” to open the release PR.",
+    publishEmptyStepThree: "Copy title, body, and link once PR is created.",
     prCreated: (title: string) => `PR created: ${title}`
   }
 } as const;
@@ -274,6 +290,26 @@ export function BetaReleasePanel(props?: { locale?: Locale }) {
 
   const visibleFiles = preview?.changedFiles.slice(0, 10) ?? [];
   const hiddenFileCount = Math.max((preview?.changedFiles.length ?? 0) - visibleFiles.length, 0);
+  const publishStateText = text.actionState(Boolean(preview), canCreatePr);
+  const releaseResultItems = createdPr
+    ? [
+      { key: "prTitle", label: text.prTitle, value: createdPr.prTitle },
+      { key: "prBody", label: text.prBody, value: createdPr.prBody },
+      { key: "prUrl", label: text.prLink, value: createdPr.prUrl },
+      { key: "repoUrl", label: text.repoTarget, value: createdPr.repoUrl },
+      { key: "branch", label: text.branchName, value: createdPr.branch },
+      { key: "bundlePath", label: text.bundlePath, value: createdPr.bundlePath },
+      {
+        key: "bundledFiles",
+        label: text.bundledFiles,
+        value: typeof createdPr.bundledFiles === "number" ? String(createdPr.bundledFiles) : undefined
+      },
+      { key: "warning", label: text.warning, value: createdPr.warning }
+    ].reduce<Array<{ key: string; label: string; value: string }>>((items, item) => {
+      if (item.value) items.push({ key: item.key, label: item.label, value: item.value });
+      return items;
+    }, [])
+    : [];
 
   const checks: BetaReleaseChecklistItem[] = preview?.checklist?.length
       ? preview.checklist
@@ -293,9 +329,9 @@ export function BetaReleasePanel(props?: { locale?: Locale }) {
   const stageProgressPercent = stages.length > 1
     ? (Math.max(activeStageIndex, 0) / (stages.length - 1)) * 100
     : 0;
-  const activeStageItem = stages[activeStageIndex] ?? stages[0];
   const hasPrevStage = activeStageIndex > 0;
   const hasNextStage = activeStageIndex >= 0 && activeStageIndex < stages.length - 1;
+  const precheckActionLabel = isDryRunning ? text.runningDryRun : (preview ? text.rerunDryRun : text.runDryRun);
 
   const resetReleaseResult = () => {
     setPreview(null);
@@ -401,14 +437,22 @@ export function BetaReleasePanel(props?: { locale?: Locale }) {
   };
 
   return (
-    <section className="panel release-workbench publisher-workbench">
-      <div className="panel-header">
-        <h3>{text.title}</h3>
-        <p className="panel-subtitle">{text.subtitle}</p>
-      </div>
-
+    <section className={`panel release-workbench publisher-workbench release-layout-stable release-stage-${activeStage}`}>
       <div className="release-flow-horizontal-shell">
-        <p className="release-flow-title">{text.stageTitle}</p>
+        <div className="release-flow-header">
+          <div className="release-flow-current">
+            <p className="release-flow-title">{text.stageTitle}</p>
+            <p className="release-flow-current-kicker">{text.stageProgress(activeStagePosition, stages.length)}</p>
+          </div>
+          <div className="release-stage-nav-buttons">
+            {hasPrevStage ? (
+              <button className="btn btn-ghost" onClick={goToPrevStage}>{text.prevStage}</button>
+            ) : null}
+            {hasNextStage ? (
+              <button className="btn btn-secondary" onClick={goToNextStage}>{text.nextStage}</button>
+            ) : null}
+          </div>
+        </div>
         <div
           className="release-stage-track"
           role="tablist"
@@ -441,138 +485,112 @@ export function BetaReleasePanel(props?: { locale?: Locale }) {
             );
           })}
         </div>
-        <div className="release-stage-nav release-stage-nav-inline">
-          <div className="release-stage-current">
-            <p className="release-stage-current-kicker">{text.stageProgress(activeStagePosition, stages.length)}</p>
-            <p className="release-stage-current-name">{activeStageItem?.name}</p>
-            <p className="release-stage-current-desc">{activeStageItem?.desc}</p>
-          </div>
-          <div className="release-stage-nav-buttons">
-            {hasPrevStage ? (
-              <button className="btn btn-ghost" onClick={goToPrevStage}>{text.prevStage}</button>
-            ) : null}
-            {hasNextStage ? (
-              <button className="btn btn-secondary" onClick={goToNextStage}>{text.nextStage}</button>
-            ) : null}
-          </div>
-        </div>
       </div>
 
       <div className="publisher-grid publisher-grid-single">
         {activeStage === "prepare" ? (
-          <article className="form-step publisher-step-card publisher-step-card-full">
-            <header className="publisher-step-head">
-              <span className="publisher-step-index">01</span>
-              <div>
-                <h4>{text.stagePrepareName}</h4>
-                <p className="state-line">{text.stagePrepareDesc}</p>
-              </div>
-            </header>
+          <article className="form-step publisher-step-card publisher-step-card-full publisher-step-card-prepare">
+            <div className="publisher-stage-grid">
+              <section className="publisher-stage-section publisher-stage-section-source">
+                <h5>{text.sourceTitle}</h5>
+                <p className="state-line">{text.sourceDesc}</p>
 
-            <section className="publisher-stage-section">
-              <h5>{text.sourceTitle}</h5>
-              <p className="state-line">{text.sourceDesc}</p>
+                <div className="release-source-switch" role="group" aria-label={text.sourceTitle}>
+                  <button
+                    className={sourceMode === "local" ? "btn btn-ghost release-source-option release-source-option-active" : "btn btn-ghost release-source-option"}
+                    onClick={() => {
+                      setSourceMode("local");
+                      resetReleaseResult();
+                    }}
+                  >
+                    {text.modeLocal}
+                  </button>
+                  <button
+                    className={sourceMode === "manual" ? "btn btn-ghost release-source-option release-source-option-active" : "btn btn-ghost release-source-option"}
+                    onClick={() => {
+                      setSourceMode("manual");
+                      resetReleaseResult();
+                    }}
+                  >
+                    {text.modeManual}
+                  </button>
+                </div>
 
-              <div className="release-source-switch" role="group" aria-label={text.sourceTitle}>
-                <button
-                  className={sourceMode === "local" ? "btn btn-ghost release-source-option release-source-option-active" : "btn btn-ghost release-source-option"}
-                  onClick={() => {
-                    setSourceMode("local");
-                    resetReleaseResult();
-                  }}
-                >
-                  {text.modeLocal}
-                </button>
-                <button
-                  className={sourceMode === "manual" ? "btn btn-ghost release-source-option release-source-option-active" : "btn btn-ghost release-source-option"}
-                  onClick={() => {
-                    setSourceMode("manual");
-                    resetReleaseResult();
-                  }}
-                >
-                  {text.modeManual}
-                </button>
-              </div>
-
-              {sourceMode === "local" ? (
-                <div className="publisher-inline-grid">
+                {sourceMode === "local" ? (
                   <label className="field">
-                    <span>{text.localFolder}</span>
-                    <select value={selectedFolderKey} onChange={(event) => onSelectFolder(event.target.value)}>
+                    <select aria-label={text.localFolder} value={selectedFolderKey} onChange={(event) => onSelectFolder(event.target.value)}>
                       {folderOptions.length === 0 ? <option value="">{text.folderEmpty}</option> : null}
                       {folderOptions.map((item) => (
                         <option key={item.key} value={item.key}>{item.label}</option>
                       ))}
                     </select>
                   </label>
-                  <button className="btn btn-ghost" onClick={() => void loadLocalFolders()}>{text.reloadLocal}</button>
-                </div>
-              ) : (
-                <div className="publisher-inline-grid">
+                ) : (
+                  <div className="publisher-inline-grid">
+                    <label className="field">
+                      <input
+                        placeholder="/Users/you/.codex/skills/my-skill"
+                        value={manualFolderPath}
+                        onChange={(event) => {
+                          setManualFolderPath(event.target.value);
+                          resetReleaseResult();
+                        }}
+                      />
+                    </label>
+                    <button className="btn btn-secondary" disabled={pickingFolder} onClick={() => void browseManualFolder()}>
+                      {pickingFolder ? text.browsingFolder : text.browseFolder}
+                    </button>
+                  </div>
+                )}
+
+                <p className="release-folder-meta">
+                  {sourceMode === "local"
+                    ? (selectedFolder ? text.folderMeta(selectedFolder.provider, selectedFolder.sourceId) : text.folderEmpty)
+                    : (currentFolderPath ? text.selectedPath(currentFolderPath) : text.folderEmpty)}
+                </p>
+                {sourceMode === "local" ? (
+                  <p className="release-folder-meta">{text.selectedPath(currentFolderPath)}</p>
+                ) : null}
+              </section>
+
+              <section
+                className="publisher-stage-section publisher-stage-section-divider publisher-stage-section-meta"
+              >
+                <h5>{text.metaTitle}</h5>
+                <p className="state-line">{text.metaDesc}</p>
+
+                <div className="publisher-meta-grid">
                   <label className="field">
-                    <span>{text.manualPath}</span>
+                    <span>{text.version}</span>
                     <input
-                      placeholder="/Users/you/.codex/skills/my-skill"
-                      value={manualFolderPath}
+                      placeholder="1.2.0-rc.1"
+                      value={version}
                       onChange={(event) => {
-                        setManualFolderPath(event.target.value);
+                        setVersion(event.target.value);
                         resetReleaseResult();
                       }}
                     />
                   </label>
-                  <button className="btn btn-secondary" disabled={pickingFolder} onClick={() => void browseManualFolder()}>
-                    {pickingFolder ? text.browsingFolder : text.browseFolder}
-                  </button>
+                  <label className="field">
+                    <span>{text.autoSkillId}</span>
+                    <input value={resolvedSkillId} readOnly />
+                  </label>
                 </div>
-              )}
 
-              <p className="release-folder-meta">
-                {sourceMode === "local"
-                  ? (selectedFolder ? text.folderMeta(selectedFolder.provider, selectedFolder.sourceId) : text.folderEmpty)
-                  : (currentFolderPath ? text.selectedPath(currentFolderPath) : text.folderEmpty)}
-              </p>
-              {sourceMode === "local" ? (
-                <p className="release-folder-meta">{text.selectedPath(currentFolderPath)}</p>
-              ) : null}
-            </section>
-
-            <section className="publisher-stage-section publisher-stage-section-divider">
-              <h5>{text.metaTitle}</h5>
-              <p className="state-line">{text.metaDesc}</p>
-
-              <div className="publisher-meta-grid">
-                <label className="field">
-                  <span>{text.version}</span>
-                  <input
-                    placeholder="1.2.0-rc.1"
-                    value={version}
-                    onChange={(event) => {
-                      setVersion(event.target.value);
-                      resetReleaseResult();
-                    }}
-                  />
-                </label>
-                <label className="field">
-                  <span>{text.autoSkillId}</span>
-                  <input value={resolvedSkillId} readOnly />
-                </label>
-              </div>
-
-              <p className="release-inline-hint">{text.autoMetaHint}</p>
-            </section>
+                <div className="release-meta-notes">
+                  <p className="release-inline-hint">{text.autoMetaHint}</p>
+                  <ul className="plain-list release-meta-note-list">
+                    <li>{text.metaNoteVersion}</li>
+                    <li>{text.metaNoteSkillId}</li>
+                  </ul>
+                </div>
+              </section>
+            </div>
           </article>
         ) : null}
 
         {activeStage === "check" ? (
-          <article className="form-step publisher-step-card publisher-step-card-full">
-            <header className="publisher-step-head">
-              <span className="publisher-step-index">02</span>
-              <div>
-                <h4>{text.checkTitle}</h4>
-                <p className="state-line">{text.checkDesc}</p>
-              </div>
-            </header>
-
+          <article className="form-step publisher-step-card publisher-step-card-full publisher-step-card-check">
             <div className="publisher-check-shell">
               <div className="publisher-check-left">
                 <div className="release-check-grid">
@@ -597,18 +615,6 @@ export function BetaReleasePanel(props?: { locale?: Locale }) {
                     </p>
                   ))}
                 </div>
-                <p className="release-inline-hint">{text.dryRunHint}</p>
-                <div className="release-stage-card-actions">
-                  <button
-                    className={isDryRunning ? "btn btn-secondary btn-with-spinner" : "btn btn-secondary"}
-                    disabled={!canDryRun || isDryRunning || isCreatingPr}
-                    onClick={() => void doDryRun()}
-                    aria-busy={isDryRunning}
-                  >
-                    {isDryRunning ? <span className="btn-inline-spinner" aria-hidden /> : null}
-                    <span>{isDryRunning ? text.runningDryRun : (preview ? text.rerunDryRun : text.runDryRun)}</span>
-                  </button>
-                </div>
               </div>
               <div className="publisher-check-right">
                 {preview ? (
@@ -623,6 +629,17 @@ export function BetaReleasePanel(props?: { locale?: Locale }) {
                     {hiddenFileCount > 0 ? <p className="state-line">{text.moreFiles(hiddenFileCount)}</p> : null}
                     <p><strong>{text.changelogDelta}</strong></p>
                     <pre>{preview.changelogDelta}</pre>
+                    <div className="release-preview-actions release-stage-card-actions release-stage-card-actions-inline">
+                      <button
+                        className={isDryRunning ? "btn btn-secondary btn-with-spinner" : "btn btn-secondary"}
+                        disabled={!canDryRun || isDryRunning || isCreatingPr}
+                        onClick={() => void doDryRun()}
+                        aria-busy={isDryRunning}
+                      >
+                        {isDryRunning ? <span className="btn-inline-spinner" aria-hidden /> : null}
+                        <span>{precheckActionLabel}</span>
+                      </button>
+                    </div>
                   </div>
                 ) : isDryRunning ? (
                   <div className="publisher-preview-empty publisher-preview-loading">
@@ -631,11 +648,33 @@ export function BetaReleasePanel(props?: { locale?: Locale }) {
                       <span>{text.runningDryRun}</span>
                     </p>
                     <p className="state-line">{text.runningDryRunHint}</p>
+                    <div className="release-preview-actions release-stage-card-actions release-stage-card-actions-inline">
+                      <button
+                        className="btn btn-secondary btn-with-spinner"
+                        disabled
+                        onClick={() => void doDryRun()}
+                        aria-busy
+                      >
+                        <span className="btn-inline-spinner" aria-hidden />
+                        <span>{precheckActionLabel}</span>
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div className="publisher-preview-empty">
                     <p className="release-preview-summary">{text.previewEmptyTitle}</p>
                     <p className="state-line">{text.previewEmptyDesc}</p>
+                    <div className="release-preview-actions release-stage-card-actions release-stage-card-actions-inline">
+                      <button
+                        className={isDryRunning ? "btn btn-secondary btn-with-spinner" : "btn btn-secondary"}
+                        disabled={!canDryRun || isDryRunning || isCreatingPr}
+                        onClick={() => void doDryRun()}
+                        aria-busy={isDryRunning}
+                      >
+                        {isDryRunning ? <span className="btn-inline-spinner" aria-hidden /> : null}
+                        <span>{precheckActionLabel}</span>
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -644,101 +683,98 @@ export function BetaReleasePanel(props?: { locale?: Locale }) {
         ) : null}
 
         {activeStage === "publish" ? (
-          <article className="form-step publisher-step-card publisher-step-card-full">
-            <header className="publisher-step-head">
-              <span className="publisher-step-index">03</span>
-              <div>
-                <h4>{text.publishTitle}</h4>
-                <p className="state-line">{text.publishDesc}</p>
-              </div>
-            </header>
-
-            <label className="confirm-check">
-              <input
-                type="checkbox"
-                checked={confirmBeforeSubmit}
-                disabled={isDryRunning || isCreatingPr}
-                onChange={(event) => setConfirmBeforeSubmit(event.target.checked)}
-              />
-              {text.confirmLabel}
-            </label>
-
-            <div className="release-stage-card-actions">
-              <button
-                className={isCreatingPr ? "btn btn-primary btn-with-spinner" : "btn btn-primary"}
-                disabled={!canCreatePr || isDryRunning || isCreatingPr}
-                onClick={() => void createPr()}
-                aria-busy={isCreatingPr}
-              >
-                {isCreatingPr ? <span className="btn-inline-spinner" aria-hidden /> : null}
-                <span>{isCreatingPr ? text.creatingPr : text.createPr}</span>
-              </button>
-            </div>
-
-            {createdPr ? (
-              <div className="release-result-box">
-                <h4>{text.resultTitle}</h4>
-                <p className="muted-copy">{text.resultHint}</p>
-
-                <p><strong>{text.prTitle}</strong></p>
-                <pre>{createdPr.prTitle}</pre>
-                <p><strong>{text.prBody}</strong></p>
-                <pre>{createdPr.prBody}</pre>
-
-                {createdPr.prUrl ? (
-                  <>
-                    <p><strong>{text.prLink}</strong></p>
-                    <pre>{createdPr.prUrl}</pre>
-                  </>
-                ) : null}
-                {createdPr.repoUrl ? (
-                  <>
-                    <p><strong>{text.repoTarget}</strong></p>
-                    <pre>{createdPr.repoUrl}</pre>
-                  </>
-                ) : null}
-                {createdPr.branch ? (
-                  <>
-                    <p><strong>{text.branchName}</strong></p>
-                    <pre>{createdPr.branch}</pre>
-                  </>
-                ) : null}
-                {createdPr.bundlePath ? (
-                  <>
-                    <p><strong>{text.bundlePath}</strong></p>
-                    <pre>{createdPr.bundlePath}</pre>
-                  </>
-                ) : null}
-                {typeof createdPr.bundledFiles === "number" ? (
-                  <>
-                    <p><strong>{text.bundledFiles}</strong></p>
-                    <pre>{String(createdPr.bundledFiles)}</pre>
-                  </>
-                ) : null}
-                {createdPr.warning ? (
-                  <>
-                    <p><strong>{text.warning}</strong></p>
-                    <pre>{createdPr.warning}</pre>
-                  </>
-                ) : null}
-
-                <div className="action-row">
-                  <button className="btn btn-ghost" onClick={() => void copyText("title", createdPr.prTitle)}>
-                    {copiedKind === "title" ? text.copied : text.copyTitle}
-                  </button>
-                  <button className="btn btn-ghost" onClick={() => void copyText("body", createdPr.prBody)}>
-                    {copiedKind === "body" ? text.copied : text.copyBody}
-                  </button>
-                  <button
-                    className="btn btn-ghost"
-                    disabled={!createdPr.prUrl}
-                    onClick={() => void copyText("link", createdPr.prUrl ?? "")}
-                  >
-                    {copiedKind === "link" ? text.copied : text.copyLink}
-                  </button>
+          <article className="form-step publisher-step-card publisher-step-card-full publisher-step-card-publish">
+            <div className="publisher-publish-shell">
+              <section className="publisher-publish-left">
+                <div className="publisher-publish-summary">
+                  <h5>{text.publishTitle}</h5>
+                  <p className="state-line">{text.publishDesc}</p>
+                  <div className="publisher-publish-summary-grid">
+                    <p className="publisher-publish-summary-item">
+                      <span>{text.publishSummarySkillId}</span>
+                      <strong>{resolvedSkillId || "-"}</strong>
+                    </p>
+                    <p className="publisher-publish-summary-item">
+                      <span>{text.publishSummaryVersion}</span>
+                      <strong>{version.trim() || "-"}</strong>
+                    </p>
+                    <p className="publisher-publish-summary-item publisher-publish-summary-item-wide">
+                      <span>{text.publishSummaryPath}</span>
+                      <strong>{currentFolderPath || "-"}</strong>
+                    </p>
+                    <p className="publisher-publish-summary-item publisher-publish-summary-item-wide">
+                      <span>{text.publishSummaryPrecheck}</span>
+                      <strong>{publishStateText}</strong>
+                    </p>
+                  </div>
                 </div>
-              </div>
-            ) : null}
+              </section>
+
+              <section className="publisher-publish-right">
+                <div className="publisher-publish-action publisher-publish-action-right">
+                  <label className="confirm-check">
+                    <input
+                      type="checkbox"
+                      checked={confirmBeforeSubmit}
+                      disabled={isDryRunning || isCreatingPr}
+                      onChange={(event) => setConfirmBeforeSubmit(event.target.checked)}
+                    />
+                    {text.confirmLabel}
+                  </label>
+                  <div className="release-stage-card-actions release-stage-card-actions-inline">
+                    <button
+                      className={isCreatingPr ? "btn btn-primary btn-with-spinner" : "btn btn-primary"}
+                      disabled={!canCreatePr || isDryRunning || isCreatingPr}
+                      onClick={() => void createPr()}
+                      aria-busy={isCreatingPr}
+                    >
+                      {isCreatingPr ? <span className="btn-inline-spinner" aria-hidden /> : null}
+                      <span>{isCreatingPr ? text.creatingPr : text.createPr}</span>
+                    </button>
+                  </div>
+                </div>
+                {createdPr ? (
+                  <div className="release-result-box">
+                    <h4>{text.resultTitle}</h4>
+                    <p className="muted-copy">{text.resultHint}</p>
+                    <div className="release-result-grid">
+                      {releaseResultItems.map((item) => (
+                        <div key={item.key} className="release-result-item">
+                          <p className="release-result-item-label">{item.label}</p>
+                          <pre>{item.value}</pre>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="action-row">
+                      <button className="btn btn-ghost" onClick={() => void copyText("title", createdPr.prTitle)}>
+                        {copiedKind === "title" ? text.copied : text.copyTitle}
+                      </button>
+                      <button className="btn btn-ghost" onClick={() => void copyText("body", createdPr.prBody)}>
+                        {copiedKind === "body" ? text.copied : text.copyBody}
+                      </button>
+                      <button
+                        className="btn btn-ghost"
+                        disabled={!createdPr.prUrl}
+                        onClick={() => void copyText("link", createdPr.prUrl ?? "")}
+                      >
+                        {copiedKind === "link" ? text.copied : text.copyLink}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="publisher-preview-empty publisher-preview-empty-publish">
+                    <p className="release-preview-summary">{text.publishEmptyTitle}</p>
+                    <p className="state-line">{text.publishEmptyDesc}</p>
+                    <ul className="plain-list publisher-publish-empty-list">
+                      <li>{text.publishEmptyStepOne}</li>
+                      <li>{text.publishEmptyStepTwo}</li>
+                      <li>{text.publishEmptyStepThree}</li>
+                    </ul>
+                  </div>
+                )}
+              </section>
+            </div>
           </article>
         ) : null}
       </div>

@@ -15,7 +15,7 @@ export function ReleaseCenterPage(props: { locale: Locale }) {
   const text = RELEASE_TEXT[locale];
 
   return (
-    <section className="column-gap release-center-shell">
+    <section className="column-gap release-center-shell release-layout-stable-shell">
       <article className="panel release-center-intro">
         <p className="release-intro-copy">{text.subtitle}</p>
       </article>
