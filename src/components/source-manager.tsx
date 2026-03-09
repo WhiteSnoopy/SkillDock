@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { checkSourceReachability, deleteSource, upsertSource } from "../lib/desktop-api";
 import { useGuardedAction } from "../hooks/use-guarded-action";
 import type { RepoSource, SourceReachability } from "../types/models";
@@ -639,7 +640,6 @@ export function SourceManager(props: {
                 onChange={(e) => setForm((prev) => ({ ...prev, repoUrl: e.target.value }))}
               />
             </label>
-            <p className="muted-copy">{text.repoIdHint}</p>
             <label className="field">
               <span>{text.branchOptional}</span>
               <input
@@ -749,84 +749,90 @@ export function SourceManager(props: {
         </section>
       </div>
 
-      {detailSource ? (
-        <div className="skill-detail-mask source-detail-mask" onClick={closeSourceDetail}>
-          <aside className="skill-detail-panel source-detail-panel" onClick={(event) => event.stopPropagation()}>
-            <header className="source-detail-header">
-              <div>
-                <h3>{detailSource.name}</h3>
-                <p className="source-detail-path">{detailSource.id}</p>
-              </div>
-              <button className="btn btn-ghost" onClick={closeSourceDetail}>
-                {text.close}
-              </button>
-            </header>
+      {detailSource
+        ? (() => {
+            const modal = (
+              <div className="skill-detail-mask source-detail-mask" onClick={closeSourceDetail}>
+                <aside className="skill-detail-panel source-detail-panel" onClick={(event) => event.stopPropagation()}>
+                  <header className="source-detail-header">
+                    <div>
+                      <h3>{detailSource.name}</h3>
+                      <p className="source-detail-path">{detailSource.id}</p>
+                    </div>
+                    <button className="btn btn-ghost" onClick={closeSourceDetail}>
+                      {text.close}
+                    </button>
+                  </header>
 
-            <div className="source-detail-kpis">
-              <span className="skill-detail-pill">URL: {detailSource.repoUrl}</span>
-              <span className="skill-detail-pill">
-                {text.branch}: {detailSource.repoBranch?.trim() || text.auto}
-              </span>
-              <span className="skill-detail-pill">
-                {text.subDir}: {detailSource.skillsPath?.trim() || text.rootDir}
-              </span>
-            </div>
+                  <div className="source-detail-kpis">
+                    <span className="skill-detail-pill">URL: {detailSource.repoUrl}</span>
+                    <span className="skill-detail-pill">
+                      {text.branch}: {detailSource.repoBranch?.trim() || text.auto}
+                    </span>
+                    <span className="skill-detail-pill">
+                      {text.subDir}: {detailSource.skillsPath?.trim() || text.rootDir}
+                    </span>
+                  </div>
 
-            <section className="source-detail-intro">
-              <div className="source-detail-intro-header">
-                <h4>{text.fullIntroTitle}</h4>
-              </div>
-              <pre className="source-detail-intro-content">{detailFullIntro}</pre>
-            </section>
+                  <section className="source-detail-intro">
+                    <div className="source-detail-intro-header">
+                      <h4>{text.fullIntroTitle}</h4>
+                    </div>
+                    <pre className="source-detail-intro-content">{detailFullIntro}</pre>
+                  </section>
 
-            <section className="interpret-panel">
-              <div className="interpret-header">
-                <h4>{text.interpretTitle}</h4>
-                <button
-                  className="btn btn-secondary"
-                  onClick={() => setInterpretation(buildSourceInterpretation(detailSource, detailFullIntro, props.locale))}
-                >
-                  {interpretation ? text.refreshInterpret : text.oneClickInterpret}
-                </button>
+                  <section className="interpret-panel">
+                    <div className="interpret-header">
+                      <h4>{text.interpretTitle}</h4>
+                      <button
+                        className="btn btn-secondary"
+                        onClick={() => setInterpretation(buildSourceInterpretation(detailSource, detailFullIntro, props.locale))}
+                      >
+                        {interpretation ? text.refreshInterpret : text.oneClickInterpret}
+                      </button>
+                    </div>
+                    {interpretation ? (
+                      <div className="interpret-content">
+                        <article className="interpret-card interpret-card-wide">
+                          <h5>{text.interpretSummary}</h5>
+                          <p>{interpretation.summary}</p>
+                        </article>
+                        <article className="interpret-card">
+                          <h5>{text.interpretHighlights}</h5>
+                          <ul className="interpret-list">
+                            {interpretation.highlights.map((item) => (
+                              <li key={`source-highlight:${item}`}>{item}</li>
+                            ))}
+                          </ul>
+                        </article>
+                        <article className="interpret-card">
+                          <h5>{text.interpretKeywords}</h5>
+                          <ul className="interpret-list">
+                            {interpretation.keywords.map((item) => (
+                              <li key={`source-keyword:${item}`}>{item}</li>
+                            ))}
+                          </ul>
+                        </article>
+                        <article className="interpret-card interpret-card-wide">
+                          <h5>{text.interpretSuggestions}</h5>
+                          <ul className="interpret-list">
+                            {interpretation.suggestions.map((item) => (
+                              <li key={`source-suggestion:${item}`}>{item}</li>
+                            ))}
+                          </ul>
+                        </article>
+                      </div>
+                    ) : (
+                      <p className="panel-subtitle">{text.interpretHint}</p>
+                    )}
+                  </section>
+                </aside>
               </div>
-              {interpretation ? (
-                <div className="interpret-content">
-                  <article className="interpret-card interpret-card-wide">
-                    <h5>{text.interpretSummary}</h5>
-                    <p>{interpretation.summary}</p>
-                  </article>
-                  <article className="interpret-card">
-                    <h5>{text.interpretHighlights}</h5>
-                    <ul className="interpret-list">
-                      {interpretation.highlights.map((item) => (
-                        <li key={`source-highlight:${item}`}>{item}</li>
-                      ))}
-                    </ul>
-                  </article>
-                  <article className="interpret-card">
-                    <h5>{text.interpretKeywords}</h5>
-                    <ul className="interpret-list">
-                      {interpretation.keywords.map((item) => (
-                        <li key={`source-keyword:${item}`}>{item}</li>
-                      ))}
-                    </ul>
-                  </article>
-                  <article className="interpret-card interpret-card-wide">
-                    <h5>{text.interpretSuggestions}</h5>
-                    <ul className="interpret-list">
-                      {interpretation.suggestions.map((item) => (
-                        <li key={`source-suggestion:${item}`}>{item}</li>
-                      ))}
-                    </ul>
-                  </article>
-                </div>
-              ) : (
-                <p className="panel-subtitle">{text.interpretHint}</p>
-              )}
-            </section>
-          </aside>
-        </div>
-      ) : null}
+            );
+
+            return typeof document !== "undefined" ? createPortal(modal, document.body) : modal;
+          })()
+        : null}
     </section>
   );
 }

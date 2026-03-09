@@ -17,32 +17,39 @@
   --hero-from: rgba(9, 97, 181, 0.1);
   --hero-to: rgba(79, 136, 197, 0.06);
   --font-sans-cjk:
-    "MiSans",
-    "HarmonyOS Sans SC",
-    "Source Han Sans SC",
+    -apple-system,
+    BlinkMacSystemFont,
+    "SF Pro Text",
     "PingFang SC",
     "Hiragino Sans GB",
-    "Microsoft YaHei",
     "Noto Sans CJK SC",
+    "Microsoft YaHei",
+    "Segoe UI",
     sans-serif;
   --font-sans-latin:
-    "Avenir Next",
-    "IBM Plex Sans",
+    -apple-system,
+    BlinkMacSystemFont,
+    "SF Pro Text",
     "Segoe UI",
     "Helvetica Neue",
+    Arial,
     sans-serif;
   --font-display-cjk:
-    "Alibaba PuHuiTi 3.0",
-    "HarmonyOS Sans SC",
-    "Source Han Sans SC",
+    -apple-system,
+    BlinkMacSystemFont,
+    "SF Pro Display",
     "PingFang SC",
+    "Hiragino Sans GB",
     "Noto Sans CJK SC",
     "Microsoft YaHei",
     sans-serif;
   --font-display-latin:
-    "Avenir Next",
-    "IBM Plex Sans",
+    -apple-system,
+    BlinkMacSystemFont,
+    "SF Pro Display",
     "Segoe UI",
+    "Helvetica Neue",
+    Arial,
     sans-serif;
   --font-mono:
     "IBM Plex Mono",
@@ -71,11 +78,11 @@
   --fw-regular: 400;
   --fw-medium: 500;
   --fw-semibold: 600;
-  --fw-display: 650;
+  --fw-display: 600;
   --fw-bold: 700;
 
-  --tracking-body: 0.002em;
-  --tracking-title: -0.008em;
+  --tracking-body: 0;
+  --tracking-title: -0.004em;
   --tracking-kicker: 0.1em;
 }
 
@@ -94,16 +101,16 @@ html[lang^="zh"] {
   --font-display-ui: var(--font-display-cjk);
   --lh-body: 1.6;
   --lh-title: 1.36;
-  --tracking-body: 0.004em;
-  --tracking-title: -0.004em;
+  --tracking-body: 0;
+  --tracking-title: -0.003em;
   --tracking-kicker: 0.075em;
 }
 
 html[lang^="en"] {
   --font-sans-ui: var(--font-sans-latin);
   --font-display-ui: var(--font-display-latin);
-  --tracking-body: 0.002em;
-  --tracking-title: -0.01em;
+  --tracking-body: 0;
+  --tracking-title: -0.005em;
   --tracking-kicker: 0.105em;
 }
 
@@ -1361,6 +1368,25 @@ button.provider-pill {
   cursor: pointer;
 }
 
+.provider-pill-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.provider-pill-icon {
+  width: 18px;
+  height: 18px;
+  display: block;
+  object-fit: contain;
+  user-select: none;
+  pointer-events: none;
+}
+
+.provider-pill-count {
+  font-variant-numeric: tabular-nums;
+}
+
 .provider-pill-active {
   border-color: #a5c0e5;
   box-shadow: inset 0 0 0 1px rgba(10, 95, 180, 0.12);
@@ -1374,6 +1400,11 @@ button.provider-pill {
 .provider-codex {
   color: #3f7f51;
   background: #e8f4ed;
+}
+
+.provider-cursor {
+  color: #6b5cab;
+  background: #efebfb;
 }
 
 .provider-gemini {
@@ -1460,11 +1491,33 @@ button.provider-pill {
 }
 
 .local-card-tags {
-  display: grid;
-  grid-template-columns: auto auto 40px 40px;
-  gap: 8px;
+  --local-tag-icon-size: 34px;
+  display: flex;
   align-items: center;
-  justify-content: start;
+  flex-wrap: nowrap;
+  gap: 10px;
+}
+
+.local-card-provider-group {
+  width: max-content;
+  display: grid;
+  grid-template-columns: repeat(3, var(--local-tag-icon-size));
+  gap: 7px;
+}
+
+.local-card-action-group {
+  display: grid;
+  grid-template-columns: repeat(2, var(--local-tag-icon-size));
+  gap: 7px;
+  margin-left: auto;
+}
+
+.local-card-action-group .local-card-tag-icon-btn {
+  min-width: 0;
+  width: var(--local-tag-icon-size);
+  height: var(--local-tag-icon-size);
+  min-height: var(--local-tag-icon-size);
+  padding: 0;
 }
 
 .local-card-tag {
@@ -1485,10 +1538,16 @@ button.provider-pill {
 }
 
 .local-card-tag.local-card-tag-provider {
-  width: auto;
-  min-width: 88px;
+  width: var(--local-tag-icon-size);
+  height: var(--local-tag-icon-size);
+  min-width: var(--local-tag-icon-size);
   justify-self: start;
-  padding-inline: 14px;
+  padding-inline: 0;
+}
+
+.local-card-tag.local-card-tag-provider.local-card-tag-provider-icon {
+  min-height: var(--local-tag-icon-size);
+  padding: 0;
 }
 
 .local-card-tag-provider-claude-on {
@@ -1501,6 +1560,12 @@ button.provider-pill {
   background: #ebf4ee;
   border-color: #ccdfd0;
   color: #437a4f;
+}
+
+.local-card-tag-provider-cursor-on {
+  background: #f1edfb;
+  border-color: #d5ccef;
+  color: #65569d;
 }
 
 .local-card-tag-provider-off {
@@ -1526,6 +1591,19 @@ button.provider-pill {
 
 .local-card-provider-toggle:active {
   transform: translateY(0);
+}
+
+.local-provider-icon {
+  width: 15px;
+  height: 15px;
+  display: block;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
+
+.local-card-tag-provider-off .local-provider-icon {
+  filter: grayscale(1) opacity(0.52);
 }
 
 .local-card-action {
@@ -1561,13 +1639,13 @@ button.provider-pill {
 
 .local-card-tag-icon-btn {
   width: auto;
-  min-width: 40px;
+  min-width: var(--local-tag-icon-size, 40px);
   padding: 0;
 }
 
 .local-card-tag-icon {
-  width: 17px;
-  height: 17px;
+  width: 15px;
+  height: 15px;
   stroke: currentColor;
   stroke-width: 1.8;
   stroke-linecap: round;
@@ -3156,7 +3234,15 @@ button.provider-pill {
   }
 
   .local-card-tags {
-    grid-template-columns: auto auto 36px 36px;
+    --local-tag-icon-size: 32px;
+    gap: 6px;
+  }
+
+  .local-card-provider-group {
+    gap: 6px;
+  }
+
+  .local-card-action-group {
     gap: 6px;
   }
 

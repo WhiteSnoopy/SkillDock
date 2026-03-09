@@ -50,8 +50,8 @@ export interface InstallSkillResponse {
   status: "queued" | "installed";
 }
 
-export type LocalSkillProvider = "Claude" | "Codex" | "Gemini" | "OpenCode" | "Other";
-export type LocalSkillInstallProvider = "Claude" | "Codex";
+export type LocalSkillProvider = "Claude" | "Codex" | "Cursor" | "Gemini" | "OpenCode" | "Other";
+export type LocalSkillInstallProvider = "Claude" | "Codex" | "Cursor";
 
 export interface LocalInstalledSkill {
   sourceId: string;

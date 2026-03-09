@@ -1,12 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { fetchLocalSkills, installLocalSkillForProvider, removeLocalSkillRecord, scanLocalInstalledSkills } from "../lib/desktop-api";
 import { useGuardedAction } from "../hooks/use-guarded-action";
 import { StatusBanner } from "../components/status-banner";
 import type { LocalInstalledSkill } from "../types/models";
 import type { Locale } from "../types/locale";
+import claudeIcon from "../assets/provider-icons/claude.png";
+import openaiIcon from "../assets/provider-icons/openai.png";
+import cursorIcon from "../assets/provider-icons/cursor.png";
 
-type VisibleProvider = "Claude" | "Codex";
-const PROVIDER_ORDER: VisibleProvider[] = ["Claude", "Codex"];
+type VisibleProvider = "Claude" | "Codex" | "Cursor";
+const PROVIDER_ORDER: VisibleProvider[] = ["Claude", "Codex", "Cursor"];
+const PROVIDER_ICON_MAP: Record<VisibleProvider, string> = {
+  Claude: claudeIcon,
+  Codex: openaiIcon,
+  Cursor: cursorIcon
+};
 
 interface AggregatedLocalSkill {
   key: string;
@@ -27,8 +36,6 @@ const LOCAL_TEXT = {
     removeSuccess: (name: string, count: number) => `已移除记录: ${name}（${count} 条）`,
     scanSuccess: (scanned: number, added: number, total: number) => `扫描完成：发现 ${scanned} 条，本次新增 ${added} 条，当前共 ${total} 条`,
     pageTitle: "本地 Skill 管理",
-    pageSubtitle: "技能列表按 Claude 和 Codex 并集展示；顶部数量按安装记录统计。",
-    scopeTitle: "安装统计",
     actionTitle: "搜索与操作",
     searchLabel: "搜索",
     all: "全部",
@@ -51,8 +58,10 @@ const LOCAL_TEXT = {
     latestInstalledAt: "最近安装时间",
     claudePath: "Claude 安装目录",
     codexPath: "Codex 安装目录",
+    cursorPath: "Cursor 安装目录",
     claudeBranch: "Claude 安装分支",
     codexBranch: "Codex 安装分支",
+    cursorBranch: "Cursor 安装分支",
     empty: "暂无匹配的本地技能记录。"
   },
   en: {
@@ -62,8 +71,6 @@ const LOCAL_TEXT = {
     removeSuccess: (name: string, count: number) => `Removed: ${name} (${count} records)`,
     scanSuccess: (scanned: number, added: number, total: number) => `Scan completed: detected ${scanned}, added ${added}, total ${total}`,
     pageTitle: "Local Skill Management",
-    pageSubtitle: "Skill list is shown as union of Claude and Codex; top counts are installation records.",
-    scopeTitle: "Installed Stats",
     actionTitle: "Search & Actions",
     searchLabel: "Search",
     all: "All",
@@ -86,8 +93,10 @@ const LOCAL_TEXT = {
     latestInstalledAt: "Latest Installed Time",
     claudePath: "Claude Install Path",
     codexPath: "Codex Install Path",
+    cursorPath: "Cursor Install Path",
     claudeBranch: "Claude Install Branch",
     codexBranch: "Codex Install Branch",
+    cursorBranch: "Cursor Install Branch",
     empty: "No local skill records matched."
   }
 } as const;
@@ -138,17 +147,19 @@ function resolveVisibleProvider(skill: LocalInstalledSkill): VisibleProvider | n
   const sourceId = String(skill.sourceId ?? "").toLowerCase();
   if (sourceId === "local-claude") return "Claude";
   if (sourceId === "local-codex") return "Codex";
+  if (sourceId === "local-cursor") return "Cursor";
 
   const trackedPath = `${String(skill.targetPath ?? "").toLowerCase()} ${String(skill.ssotPath ?? "").toLowerCase()}`;
   if (trackedPath.includes(".claude/skills") || trackedPath.includes(".claude\\skills")) return "Claude";
   if (trackedPath.includes(".codex/skills") || trackedPath.includes(".codex\\skills")) return "Codex";
+  if (trackedPath.includes(".cursor/skills") || trackedPath.includes(".cursor\\skills")) return "Cursor";
 
-  if (skill.provider === "Claude" || skill.provider === "Codex") return skill.provider;
+  if (skill.provider === "Claude" || skill.provider === "Codex" || skill.provider === "Cursor") return skill.provider;
   return null;
 }
 
-function oppositeProvider(provider: VisibleProvider): VisibleProvider {
-  return provider === "Claude" ? "Codex" : "Claude";
+function providersExcept(provider: VisibleProvider): VisibleProvider[] {
+  return PROVIDER_ORDER.filter((item) => item !== provider);
 }
 
 function uniqueRecordTargets(records: LocalInstalledSkill[]): Array<{ sourceId: string; skillId: string }> {
@@ -197,7 +208,7 @@ export function LocalSkillsPage(props: { locale: Locale }) {
     const grouped = new Map<string, Record<VisibleProvider, LocalInstalledSkill[]>>();
     for (const record of visibleProviderRecords) {
       const key = toUnionKey(record);
-      const current = grouped.get(key) ?? { Claude: [], Codex: [] };
+      const current = grouped.get(key) ?? { Claude: [], Codex: [], Cursor: [] };
       current[record.provider].push(record);
       grouped.set(key, current);
     }
@@ -224,7 +235,8 @@ export function LocalSkillsPage(props: { locale: Locale }) {
         sourceIds: new Set<string>(),
         providers: {
           Claude: null,
-          Codex: null
+          Codex: null,
+          Cursor: null
         }
       };
 
@@ -241,7 +253,7 @@ export function LocalSkillsPage(props: { locale: Locale }) {
 
     const merged: AggregatedLocalSkill[] = [];
     for (const [key, item] of map) {
-      const latestInstalledAt = [item.providers.Claude, item.providers.Codex]
+      const latestInstalledAt = [item.providers.Claude, item.providers.Codex, item.providers.Cursor]
         .filter((value): value is LocalInstalledSkill => Boolean(value))
         .sort((left, right) => getInstalledAtEpoch(right.installedAt) - getInstalledAtEpoch(left.installedAt))[0]?.installedAt;
 
@@ -269,7 +281,7 @@ export function LocalSkillsPage(props: { locale: Locale }) {
         acc[item.provider] += 1;
         return acc;
       },
-      { Claude: 0, Codex: 0 }
+      { Claude: 0, Codex: 0, Cursor: 0 }
     );
   }, [visibleProviderRecords]);
 
@@ -287,8 +299,10 @@ export function LocalSkillsPage(props: { locale: Locale }) {
         item.description,
         item.providers.Claude?.installName ?? "",
         item.providers.Codex?.installName ?? "",
+        item.providers.Cursor?.installName ?? "",
         item.providers.Claude ? "claude" : "",
-        item.providers.Codex ? "codex" : ""
+        item.providers.Codex ? "codex" : "",
+        item.providers.Cursor ? "cursor" : ""
       ]
         .join(" ")
         .toLowerCase();
@@ -300,8 +314,8 @@ export function LocalSkillsPage(props: { locale: Locale }) {
   const removeRecord = async (item: AggregatedLocalSkill) => {
     if (!window.confirm(text.removeConfirm(item.name))) return;
 
-    const records = providerRecordsByKey.get(item.key) ?? { Claude: [], Codex: [] };
-    const uniqueTargets = uniqueRecordTargets([...records.Claude, ...records.Codex]);
+    const records = providerRecordsByKey.get(item.key) ?? { Claude: [], Codex: [], Cursor: [] };
+    const uniqueTargets = uniqueRecordTargets([...records.Claude, ...records.Codex, ...records.Cursor]);
 
     const result = await run(async () => {
       for (const target of uniqueTargets) {
@@ -318,7 +332,7 @@ export function LocalSkillsPage(props: { locale: Locale }) {
   };
 
   const toggleProvider = async (item: AggregatedLocalSkill, provider: VisibleProvider) => {
-    const records = providerRecordsByKey.get(item.key) ?? { Claude: [], Codex: [] };
+    const records = providerRecordsByKey.get(item.key) ?? { Claude: [], Codex: [], Cursor: [] };
     const currentProviderRecords = records[provider];
     if (currentProviderRecords.length > 0) {
       const removeTargets = uniqueRecordTargets(currentProviderRecords);
@@ -338,7 +352,7 @@ export function LocalSkillsPage(props: { locale: Locale }) {
       return;
     }
 
-    const seedCandidates = records[oppositeProvider(provider)];
+    const seedCandidates = providersExcept(provider).flatMap((itemProvider) => records[itemProvider]);
     const seed = [...seedCandidates].sort((left, right) => getInstalledAtEpoch(right.installedAt) - getInstalledAtEpoch(left.installedAt))[0];
     if (!seed) {
       setSuccessMessage(text.noSeedForInstall(provider));
@@ -378,8 +392,26 @@ export function LocalSkillsPage(props: { locale: Locale }) {
   return (
     <section className="column-gap local-shell">
       <article className="panel local-intro">
-        <div>
-          <p className="local-intro-copy">{text.pageSubtitle}</p>
+        <div className="local-provider-strip">
+          <button
+            className={providerFilter === "all" ? "provider-pill provider-pill-active" : "provider-pill"}
+            onClick={() => setProviderFilter("all")}
+          >
+            {text.all}: {totalInstalledRecords}
+          </button>
+          {PROVIDER_ORDER.map((provider) => (
+            <button
+              key={provider}
+              className={providerFilter === provider ? `provider-pill provider-pill-active provider-${provider.toLowerCase()}` : `provider-pill provider-${provider.toLowerCase()}`}
+              onClick={() => setProviderFilter(provider)}
+              aria-label={`${provider}: ${providerInstalledCounts[provider]}`}
+            >
+              <span className="provider-pill-content">
+                <img className="provider-pill-icon" src={PROVIDER_ICON_MAP[provider]} alt="" aria-hidden="true" />
+                <span className="provider-pill-count">{providerInstalledCounts[provider]}</span>
+              </span>
+            </button>
+          ))}
         </div>
         <div className="local-intro-actions">
           <button
@@ -404,27 +436,6 @@ export function LocalSkillsPage(props: { locale: Locale }) {
       </article>
 
       <div className="panel local-skills-panel">
-        <div className="local-panel-summary">
-          <span className="local-inline-label">{text.scopeTitle}</span>
-          <div className="local-provider-strip">
-            <button
-              className={providerFilter === "all" ? "provider-pill provider-pill-active" : "provider-pill"}
-              onClick={() => setProviderFilter("all")}
-            >
-              {text.all}: {totalInstalledRecords}
-            </button>
-            {PROVIDER_ORDER.map((provider) => (
-              <button
-                key={provider}
-                className={providerFilter === provider ? `provider-pill provider-pill-active provider-${provider.toLowerCase()}` : `provider-pill provider-${provider.toLowerCase()}`}
-                onClick={() => setProviderFilter(provider)}
-              >
-                {provider}: {providerInstalledCounts[provider]}
-              </button>
-            ))}
-          </div>
-        </div>
-
         <div className="local-toolbar-shell">
           <div className="local-action-inline">
             <span className="local-inline-label">{text.searchLabel}</span>
@@ -459,46 +470,59 @@ export function LocalSkillsPage(props: { locale: Locale }) {
                 </p>
 
                 <div className="local-card-tags">
-                  <button
-                    className={item.providers.Claude ? "local-card-tag local-card-state local-card-provider-toggle local-card-tag-provider local-card-tag-provider-claude-on" : "local-card-tag local-card-state local-card-provider-toggle local-card-tag-provider local-card-tag-provider-off"}
-                    onClick={() => void toggleProvider(item, "Claude")}
-                    aria-label={item.providers.Claude ? text.removeProvider("Claude") : text.installProvider("Claude")}
-                    title={item.providers.Claude ? text.removeProvider("Claude") : text.installProvider("Claude")}
-                  >
-                      Claude
-                  </button>
-                  <button
-                    className={item.providers.Codex ? "local-card-tag local-card-state local-card-provider-toggle local-card-tag-provider local-card-tag-provider-codex-on" : "local-card-tag local-card-state local-card-provider-toggle local-card-tag-provider local-card-tag-provider-off"}
-                    onClick={() => void toggleProvider(item, "Codex")}
-                    aria-label={item.providers.Codex ? text.removeProvider("Codex") : text.installProvider("Codex")}
-                    title={item.providers.Codex ? text.removeProvider("Codex") : text.installProvider("Codex")}
-                  >
-                      Codex
-                  </button>
-                  <button
-                    className="local-card-tag local-card-action local-card-tag-action local-card-tag-icon-btn local-card-tag-detail"
-                    onClick={() => setDetailSkill(item)}
-                    aria-label={text.details}
-                    title={text.details}
-                  >
-                    <svg className="local-card-tag-icon" viewBox="0 0 24 24" aria-hidden="true">
-                      <path d="M12 4.5c4.8 0 8.8 3.1 10.3 7.5C20.8 16.4 16.8 19.5 12 19.5S3.2 16.4 1.7 12C3.2 7.6 7.2 4.5 12 4.5Z" />
-                      <circle cx="12" cy="12" r="2.8" />
-                    </svg>
-                  </button>
-                  <button
-                    className="local-card-tag local-card-action local-card-tag-action local-card-tag-icon-btn local-card-tag-remove"
-                    onClick={() => void removeRecord(item)}
-                    aria-label={text.removeRecord}
-                    title={text.removeRecord}
-                  >
-                    <svg className="local-card-tag-icon" viewBox="0 0 24 24" aria-hidden="true">
-                      <path d="M4.5 7h15" />
-                      <path d="M9.2 4.5h5.6" />
-                      <path d="M7.5 7l.8 11.2a1 1 0 0 0 1 .8h5.4a1 1 0 0 0 1-.8L16.5 7" />
-                      <path d="M10 10.3v5.8M14 10.3v5.8" />
-                    </svg>
-                  </button>
+                  <div className="local-card-provider-group">
+                    <button
+                      className={item.providers.Claude ? "local-card-tag local-card-state local-card-provider-toggle local-card-tag-provider local-card-tag-provider-icon local-card-tag-provider-claude-on" : "local-card-tag local-card-state local-card-provider-toggle local-card-tag-provider local-card-tag-provider-icon local-card-tag-provider-off"}
+                      onClick={() => void toggleProvider(item, "Claude")}
+                      aria-label={item.providers.Claude ? text.removeProvider("Claude") : text.installProvider("Claude")}
+                      title={item.providers.Claude ? text.removeProvider("Claude") : text.installProvider("Claude")}
+                    >
+                      <img className="local-provider-icon" src={claudeIcon} alt="" aria-hidden="true" />
+                    </button>
+                    <button
+                      className={item.providers.Codex ? "local-card-tag local-card-state local-card-provider-toggle local-card-tag-provider local-card-tag-provider-icon local-card-tag-provider-codex-on" : "local-card-tag local-card-state local-card-provider-toggle local-card-tag-provider local-card-tag-provider-icon local-card-tag-provider-off"}
+                      onClick={() => void toggleProvider(item, "Codex")}
+                      aria-label={item.providers.Codex ? text.removeProvider("Codex") : text.installProvider("Codex")}
+                      title={item.providers.Codex ? text.removeProvider("Codex") : text.installProvider("Codex")}
+                    >
+                      <img className="local-provider-icon" src={openaiIcon} alt="" aria-hidden="true" />
+                    </button>
+                    <button
+                      className={item.providers.Cursor ? "local-card-tag local-card-state local-card-provider-toggle local-card-tag-provider local-card-tag-provider-icon local-card-tag-provider-cursor-on" : "local-card-tag local-card-state local-card-provider-toggle local-card-tag-provider local-card-tag-provider-icon local-card-tag-provider-off"}
+                      onClick={() => void toggleProvider(item, "Cursor")}
+                      aria-label={item.providers.Cursor ? text.removeProvider("Cursor") : text.installProvider("Cursor")}
+                      title={item.providers.Cursor ? text.removeProvider("Cursor") : text.installProvider("Cursor")}
+                    >
+                      <img className="local-provider-icon" src={cursorIcon} alt="" aria-hidden="true" />
+                    </button>
+                  </div>
+
+                  <div className="local-card-action-group">
+                    <button
+                      className="local-card-tag local-card-action local-card-tag-action local-card-tag-icon-btn local-card-tag-detail"
+                      onClick={() => setDetailSkill(item)}
+                      aria-label={text.details}
+                      title={text.details}
+                    >
+                      <svg className="local-card-tag-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M12 4.5c4.8 0 8.8 3.1 10.3 7.5C20.8 16.4 16.8 19.5 12 19.5S3.2 16.4 1.7 12C3.2 7.6 7.2 4.5 12 4.5Z" />
+                        <circle cx="12" cy="12" r="2.8" />
+                      </svg>
+                    </button>
+                    <button
+                      className="local-card-tag local-card-action local-card-tag-action local-card-tag-icon-btn local-card-tag-remove"
+                      onClick={() => void removeRecord(item)}
+                      aria-label={text.removeRecord}
+                      title={text.removeRecord}
+                    >
+                      <svg className="local-card-tag-icon" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M4.5 7h15" />
+                        <path d="M9.2 4.5h5.6" />
+                        <path d="M7.5 7l.8 11.2a1 1 0 0 0 1 .8h5.4a1 1 0 0 0 1-.8L16.5 7" />
+                        <path d="M10 10.3v5.8M14 10.3v5.8" />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
               </article>
             );
@@ -507,33 +531,41 @@ export function LocalSkillsPage(props: { locale: Locale }) {
         </div>
       </div>
 
-      {detailSkill ? (
-        <div className="local-detail-mask" onClick={() => setDetailSkill(null)}>
-          <aside className="local-detail-panel" onClick={(event) => event.stopPropagation()}>
-            <header className="local-detail-header">
-              <div>
-                <p className="local-detail-kicker">{text.detailTitle}</p>
-                <h3>{detailSkill.name}</h3>
+      {detailSkill
+        ? (() => {
+            const modal = (
+              <div className="local-detail-mask" onClick={() => setDetailSkill(null)}>
+                <aside className="local-detail-panel" onClick={(event) => event.stopPropagation()}>
+                  <header className="local-detail-header">
+                    <div>
+                      <p className="local-detail-kicker">{text.detailTitle}</p>
+                      <h3>{detailSkill.name}</h3>
+                    </div>
+                    <button className="btn btn-ghost" onClick={() => setDetailSkill(null)}>
+                      {text.close}
+                    </button>
+                  </header>
+
+                  <p className="local-detail-summary">{detailSkill.description}</p>
+
+                  <div className="local-card-detail-grid">
+                    <p><span>{text.desc}</span><strong>{detailSkill.description}</strong></p>
+                    <p><span>{text.publisher}</span><strong>{detailSkill.publisher ?? "-"}</strong></p>
+                    <p><span>{text.latestInstalledAt}</span><strong>{formatInstalledAt(detailSkill.latestInstalledAt, locale)}</strong></p>
+                    <p><span>{text.claudePath}</span><strong>{detailSkill.providers.Claude?.targetPath ?? "-"}</strong></p>
+                    <p><span>{text.codexPath}</span><strong>{detailSkill.providers.Codex?.targetPath ?? "-"}</strong></p>
+                    <p><span>{text.cursorPath}</span><strong>{detailSkill.providers.Cursor?.targetPath ?? "-"}</strong></p>
+                    <p><span>{text.claudeBranch}</span><strong>{detailSkill.providers.Claude?.installBranch ?? "-"}</strong></p>
+                    <p><span>{text.codexBranch}</span><strong>{detailSkill.providers.Codex?.installBranch ?? "-"}</strong></p>
+                    <p><span>{text.cursorBranch}</span><strong>{detailSkill.providers.Cursor?.installBranch ?? "-"}</strong></p>
+                  </div>
+                </aside>
               </div>
-              <button className="btn btn-ghost" onClick={() => setDetailSkill(null)}>
-                {text.close}
-              </button>
-            </header>
+            );
 
-            <p className="local-detail-summary">{detailSkill.description}</p>
-
-            <div className="local-card-detail-grid">
-              <p><span>{text.desc}</span><strong>{detailSkill.description}</strong></p>
-              <p><span>{text.publisher}</span><strong>{detailSkill.publisher ?? "-"}</strong></p>
-              <p><span>{text.latestInstalledAt}</span><strong>{formatInstalledAt(detailSkill.latestInstalledAt, locale)}</strong></p>
-              <p><span>{text.claudePath}</span><strong>{detailSkill.providers.Claude?.targetPath ?? "-"}</strong></p>
-              <p><span>{text.codexPath}</span><strong>{detailSkill.providers.Codex?.targetPath ?? "-"}</strong></p>
-              <p><span>{text.claudeBranch}</span><strong>{detailSkill.providers.Claude?.installBranch ?? "-"}</strong></p>
-              <p><span>{text.codexBranch}</span><strong>{detailSkill.providers.Codex?.installBranch ?? "-"}</strong></p>
-            </div>
-          </aside>
-        </div>
-      ) : null}
+            return typeof document !== "undefined" ? createPortal(modal, document.body) : modal;
+          })()
+        : null}
     </section>
   );
 }

@@ -488,10 +488,13 @@ pub async fn install_local_skill_for_provider(
             "seedSourceId/seedSkillId are required",
         ));
     }
-    if request.target_provider != "Claude" && request.target_provider != "Codex" {
+    if request.target_provider != "Claude"
+        && request.target_provider != "Codex"
+        && request.target_provider != "Cursor"
+    {
         return Err(guarded_error(
             "VALIDATION_ERROR",
-            "targetProvider must be Claude or Codex",
+            "targetProvider must be Claude, Codex or Cursor",
         ));
     }
 

@@ -7,6 +7,7 @@ import { SkillCampPage } from "../pages/skill-camp-page";
 import { ReleaseCenterPage } from "../pages/release-center-page";
 import { APP_LOCALE_STORAGE_KEY, resolveInitialLocale } from "../types/locale";
 import type { Locale } from "../types/locale";
+import appIcon from "../assets/app-icon.png";
 import "./app.css";
 import "./redesign.css";
 
@@ -16,10 +17,10 @@ const PAGE_ORDER: Page[] = ["market", "local", "camp", "release"];
 const APP_TEXT = {
   zh: {
     heroKicker: "SkillDock Workspace",
-    heroTitle: "Skill Agent",
+    heroTitle: "SkillDock",
     heroSubtitle: {
       market: "发现并安装技能，统一管理市场源与版本。",
-      local: "聚合本机技能，按 Claude 与 Codex 双端编排。",
+      local: "聚合本机技能，按 Claude、Codex 与 Cursor 多端编排。",
       camp: "创作新技能、沉淀模板、规范产物交付。",
       release: "按发布流程预检并创建可审计的发布 PR。"
     },
@@ -45,10 +46,10 @@ const APP_TEXT = {
   },
   en: {
     heroKicker: "SkillDock Workspace",
-    heroTitle: "Skill Agent",
+    heroTitle: "SkillDock",
     heroSubtitle: {
       market: "Discover and install skills with source and version control.",
-      local: "Manage local skills across Claude and Codex in one place.",
+      local: "Manage local skills across Claude, Codex, and Cursor in one place.",
       camp: "Create new skills, iterate templates, and standardize delivery.",
       release: "Run release checks and create auditable release PRs."
     },
@@ -232,6 +233,9 @@ export function App() {
   return (
     <main className="layout layout-board">
       <aside className="shell-rail" aria-label={text.navAria}>
+        <div className="rail-logo" aria-hidden="true" title="SkillDock">
+          <img src={appIcon} alt="" />
+        </div>
         <header className="rail-head">
           <button
             className="btn btn-ghost rail-avatar-btn"
@@ -240,8 +244,11 @@ export function App() {
             title={text.settings}
           >
             <svg viewBox="0 0 20 20" aria-hidden="true">
-              <circle cx="10" cy="6.6" r="3.2" />
-              <path d="M4.4 15.5c.6-2.5 2.9-4.2 5.6-4.2s5 1.7 5.6 4.2" />
+              <path
+                fillRule="evenodd"
+                clipRule="evenodd"
+                d="M7.84 1.804A1.5 1.5 0 0 1 9.25.75h1.5a1.5 1.5 0 0 1 1.41 1.054l.173.52c.21.63.88.975 1.5.772l.404-.133a1.5 1.5 0 0 1 1.64.428l1.06 1.06a1.5 1.5 0 0 1 .427 1.64l-.133.405a1.125 1.125 0 0 0 .773 1.499l.518.173a1.5 1.5 0 0 1 1.055 1.41v1.5a1.5 1.5 0 0 1-1.055 1.41l-.517.173a1.125 1.125 0 0 0-.773 1.498l.133.406a1.5 1.5 0 0 1-.427 1.64l-1.06 1.06a1.5 1.5 0 0 1-1.64.427l-.404-.133a1.125 1.125 0 0 0-1.5.772l-.173.52a1.5 1.5 0 0 1-1.41 1.053h-1.5a1.5 1.5 0 0 1-1.41-1.054l-.173-.519a1.125 1.125 0 0 0-1.5-.772l-.404.133a1.5 1.5 0 0 1-1.64-.427l-1.06-1.06a1.5 1.5 0 0 1-.427-1.64l.133-.406a1.125 1.125 0 0 0-.773-1.498l-.517-.173A1.5 1.5 0 0 1 .75 10.75v-1.5a1.5 1.5 0 0 1 1.054-1.41l.517-.173a1.125 1.125 0 0 0 .773-1.498l-.133-.406a1.5 1.5 0 0 1 .427-1.64l1.06-1.06a1.5 1.5 0 0 1 1.64-.427l.404.133a1.125 1.125 0 0 0 1.5-.772l.173-.52ZM10 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
+              />
             </svg>
             <span className="rail-avatar-dot" />
           </button>

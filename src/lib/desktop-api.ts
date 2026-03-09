@@ -124,13 +124,14 @@ export async function installMarketSkill(request: InstallSkillRequest): Promise<
 const EMPTY_LOCAL_PROVIDER_COUNTS: LocalSkillsResponse["providers"] = {
   Claude: 0,
   Codex: 0,
+  Cursor: 0,
   Gemini: 0,
   OpenCode: 0,
   Other: 0
 };
 
 function normalizeProvider(raw: unknown): LocalSkillsResponse["skills"][number]["provider"] {
-  if (raw === "Claude" || raw === "Codex" || raw === "Gemini" || raw === "OpenCode") {
+  if (raw === "Claude" || raw === "Codex" || raw === "Cursor" || raw === "Gemini" || raw === "OpenCode") {
     return raw;
   }
   return "Other";

@@ -264,7 +264,7 @@ export function BetaReleasePanel(props?: { locale?: Locale }) {
 
   const folderOptions = useMemo(() => {
     const options = localSkills
-      .filter((item) => item.provider === "Claude" || item.provider === "Codex")
+      .filter((item) => item.provider === "Claude" || item.provider === "Codex" || item.provider === "Cursor")
       .map(toFolderOption)
       .filter((item): item is FolderOption => Boolean(item));
     return options.sort((left, right) =>

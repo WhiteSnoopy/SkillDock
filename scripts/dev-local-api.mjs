@@ -220,6 +220,7 @@ function inferProviderFromSkill(skill) {
 
   if (text.includes("claude") || text.includes("anthropic")) return "Claude";
   if (text.includes("codex") || text.includes("openai")) return "Codex";
+  if (text.includes("cursor")) return "Cursor";
   if (text.includes("gemini") || text.includes("google")) return "Gemini";
   if (text.includes("opencode")) return "OpenCode";
   return "Other";
@@ -229,12 +230,13 @@ function summarizeProviders(list) {
   const providers = {
     Claude: 0,
     Codex: 0,
+    Cursor: 0,
     Gemini: 0,
     OpenCode: 0,
     Other: 0
   };
   for (const item of list) {
-    const key = ["Claude", "Codex", "Gemini", "OpenCode"].includes(item.provider)
+    const key = ["Claude", "Codex", "Cursor", "Gemini", "OpenCode"].includes(item.provider)
       ? item.provider
       : "Other";
     providers[key] += 1;
@@ -302,7 +304,8 @@ function pruneUnsupportedLocalInstallations(targets) {
 function buildLocalSkillScanTargets() {
   const defaults = [
     { dir: path.join(os.homedir(), ".codex", "skills"), provider: "Codex", sourceId: "local-codex" },
-    { dir: path.join(os.homedir(), ".claude", "skills"), provider: "Claude", sourceId: "local-claude" }
+    { dir: path.join(os.homedir(), ".claude", "skills"), provider: "Claude", sourceId: "local-claude" },
+    { dir: path.join(os.homedir(), ".cursor", "skills"), provider: "Cursor", sourceId: "local-cursor" }
   ];
 
   const merged = [...defaults];
@@ -318,7 +321,7 @@ function buildLocalSkillScanTargets() {
 
 function normalizeLocalProvider(value) {
   const provider = String(value ?? "").trim();
-  if (provider === "Claude" || provider === "Codex") {
+  if (provider === "Claude" || provider === "Codex" || provider === "Cursor") {
     return provider;
   }
   return null;
@@ -392,7 +395,7 @@ async function removeInstallationPaths(record) {
 async function installSkillToLocalProvider(request) {
   const targetProvider = normalizeLocalProvider(request?.targetProvider);
   if (!targetProvider) {
-    throw new Error("targetProvider must be Claude or Codex");
+    throw new Error("targetProvider must be Claude, Codex or Cursor");
   }
 
   const seedSourceId = String(request?.seedSourceId ?? "").trim();

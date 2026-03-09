@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { fetchMarketSkills, fetchSources, installMarketSkill, syncMarketIndex } from "../lib/desktop-api";
 import type { MarketSkill, RepoSource, SourceHealth } from "../types/models";
 import type { Locale } from "../types/locale";
@@ -380,20 +381,6 @@ export function MarketPage(props: { locale: Locale }) {
 
   return (
     <section className="column-gap market-shell">
-      <article className="panel market-intro">
-        <div>
-          <p className="market-intro-copy">{text.pageSubtitle}</p>
-        </div>
-        <div className="market-intro-right">
-          <p className="market-intro-time">
-            {lastSyncAt ? `${text.lastSync}: ${formattedSyncTime}` : text.notSynced}
-          </p>
-          <button className="btn btn-primary" onClick={() => void doSync()}>
-            {text.syncMarket}
-          </button>
-        </div>
-      </article>
-
       <div className="panel market-overview">
         <div className="metric-strip market-metric-strip">
           <div className="metric-card">
@@ -410,51 +397,67 @@ export function MarketPage(props: { locale: Locale }) {
           </div>
         </div>
 
-        <div className="secondary-tabs market-tabs" role="tablist" aria-label={text.pageTitle}>
-          <button
-            role="tab"
-            aria-selected={view === "catalog"}
-            className={view === "catalog" ? "btn btn-tab btn-tab-active" : "btn btn-tab"}
-            onClick={() => setView("catalog")}
-          >
-            {text.browseTab}
-          </button>
-          <button
-            role="tab"
-            aria-selected={view === "sources"}
-            className={view === "sources" ? "btn btn-tab btn-tab-active" : "btn btn-tab"}
-            onClick={() => setView("sources")}
-          >
-            {text.sourceTab}
-          </button>
+        <div className="market-overview-actions">
+          <div className="secondary-tabs market-tabs" role="tablist" aria-label={text.pageTitle}>
+            <button
+              role="tab"
+              aria-selected={view === "catalog"}
+              className={view === "catalog" ? "btn btn-tab btn-tab-active" : "btn btn-tab"}
+              onClick={() => setView("catalog")}
+            >
+              {text.browseTab}
+            </button>
+            <button
+              role="tab"
+              aria-selected={view === "sources"}
+              className={view === "sources" ? "btn btn-tab btn-tab-active" : "btn btn-tab"}
+              onClick={() => setView("sources")}
+            >
+              {text.sourceTab}
+            </button>
+          </div>
+
+          <div className="market-overview-sync">
+            <p className="market-overview-sync-time">
+              {lastSyncAt ? `${text.lastSync}: ${formattedSyncTime}` : text.notSynced}
+            </p>
+            <button className="btn btn-secondary market-sync-btn" onClick={() => void doSync()}>
+              {text.syncMarket}
+            </button>
+          </div>
         </div>
       </div>
 
       {view === "catalog" ? (
         <div className="panel market-panel">
-          {syncMessage ? <p className="muted-copy market-sync-message">{syncMessage}</p> : null}
           <StatusBanner error={error} loading={loading} locale={locale} />
-          <div className="table-toolbar market-toolbar">
+          <div className="table-toolbar market-toolbar market-toolbar-inline">
             <label className="field field-compact field-search">
-              <span>{text.search}</span>
               <input
+                aria-label={text.search}
                 placeholder={text.searchPlaceholder}
                 value={keyword}
                 onChange={(event) => setKeyword(event.target.value)}
               />
             </label>
-            <label className="field field-compact">
-              <span>{text.sortField}</span>
-              <select value={sortBy} onChange={(event) => setSortBy(event.target.value as "name" | "publisher" | "version" | "source")}>
+            <label className="field field-compact market-toolbar-select">
+              <select
+                aria-label={text.sortField}
+                value={sortBy}
+                onChange={(event) => setSortBy(event.target.value as "name" | "publisher" | "version" | "source")}
+              >
                 <option value="name">{text.sortByName}</option>
                 <option value="publisher">{text.sortByPublisher}</option>
                 <option value="version">{text.sortByVersion}</option>
                 <option value="source">{text.sortBySource}</option>
               </select>
             </label>
-            <label className="field field-compact">
-              <span>{text.sourceFilter}</span>
-              <select value={selectedSourceId} onChange={(event) => setSelectedSourceId(event.target.value)}>
+            <label className="field field-compact market-toolbar-select">
+              <select
+                aria-label={text.sourceFilter}
+                value={selectedSourceId}
+                onChange={(event) => setSelectedSourceId(event.target.value)}
+              >
                 <option value="">{text.allEffectiveSources}</option>
                 {sourceOptions.map((source) => (
                   <option key={source.id} value={source.id}>
@@ -463,13 +466,16 @@ export function MarketPage(props: { locale: Locale }) {
                 ))}
               </select>
             </label>
-            <div className="field field-compact field-action">
-              <span>{text.sortDirection}</span>
+            <div className="field field-compact field-action market-toolbar-direction">
               <button
-                className="btn btn-ghost"
+                className="btn btn-ghost market-sort-direction-btn"
                 onClick={() => setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"))}
+                aria-label={`${text.sortDirection}: ${sortDirection === "asc" ? text.asc : text.desc}`}
+                title={`${text.sortDirection}: ${sortDirection === "asc" ? text.asc : text.desc}`}
               >
-                {sortDirection === "asc" ? text.asc : text.desc}
+                <span className="market-sort-direction-icon" aria-hidden>
+                  {sortDirection === "asc" ? "↑" : "↓"}
+                </span>
               </button>
             </div>
           </div>
@@ -525,103 +531,108 @@ export function MarketPage(props: { locale: Locale }) {
         />
       )}
 
-      {selectedSkill ? (
-        <div className="skill-detail-mask" onClick={() => setSelectedSkill(null)}>
-          <aside className="skill-detail-panel" onClick={(event) => event.stopPropagation()}>
-            <header className="skill-detail-header">
-              <div>
-                <h3>{selectedSkill.name}</h3>
-                <p className="skill-detail-path">{selectedSkill.sourceId}/{selectedSkill.skillId}</p>
+      {selectedSkill
+        ? (() => {
+            const modal = (
+              <div className="skill-detail-mask" onClick={() => setSelectedSkill(null)}>
+                <aside className="skill-detail-panel" onClick={(event) => event.stopPropagation()}>
+                  <header className="skill-detail-header">
+                    <div>
+                      <h3>{selectedSkill.name}</h3>
+                      <p className="skill-detail-path">{selectedSkill.sourceId}/{selectedSkill.skillId}</p>
+                    </div>
+                    <div className="skill-detail-header-actions">
+                      <button className="btn btn-primary" onClick={() => void doInstall(selectedSkill)}>
+                        {text.installSkill}
+                      </button>
+                      <button className="btn btn-ghost" onClick={() => setSelectedSkill(null)}>
+                        {text.close}
+                      </button>
+                    </div>
+                  </header>
+
+                  <div className="skill-detail-kpis">
+                    <span className="skill-detail-pill">{text.publisher}: {selectedSkill.publisher}</span>
+                    <span className="skill-detail-pill">{text.source}: {selectedSkill.sourceId}</span>
+                    <span className="skill-detail-pill">{text.recommendedVersion}: {getPreferredVersion(selectedSkill)}</span>
+                    <span className={`skill-detail-pill health health-${selectedSkill.sourceHealth}`}>
+                      {text.sourceHealth}: {formatSourceHealth(selectedSkill.sourceHealth)}
+                    </span>
+                  </div>
+
+                  <p className="skill-detail-lead">{selectedSkill.description ?? text.detailFallback}</p>
+
+                  <section className="interpret-panel">
+                    <div className="interpret-header">
+                      <h4>{text.interpretTitle}</h4>
+                      <button
+                        className="btn btn-secondary"
+                        onClick={() => setInterpretation(buildSkillInterpretation(selectedSkill, locale))}
+                      >
+                        {interpretation ? text.refreshInterpret : text.oneClickInterpret}
+                      </button>
+                    </div>
+                    {interpretation ? (
+                      <div className="interpret-content">
+                        <article className="interpret-card interpret-card-wide">
+                          <h5>{text.interpretSummary}</h5>
+                          <p>{interpretation.summary}</p>
+                        </article>
+                        <article className="interpret-card">
+                          <h5>{text.interpretScenarios}</h5>
+                          <ul className="interpret-list">
+                            {interpretation.scenarios.map((item) => (
+                              <li key={`scenario:${item}`}>{item}</li>
+                            ))}
+                          </ul>
+                        </article>
+                        <article className="interpret-card">
+                          <h5>{text.interpretTriggers}</h5>
+                          <ul className="interpret-list">
+                            {interpretation.triggers.map((item) => (
+                              <li key={`trigger:${item}`}>{item}</li>
+                            ))}
+                          </ul>
+                        </article>
+                        <article className="interpret-card">
+                          <h5>{text.interpretSuggestions}</h5>
+                          <ul className="interpret-list">
+                            {interpretation.suggestions.map((item) => (
+                              <li key={`suggestion:${item}`}>{item}</li>
+                            ))}
+                          </ul>
+                        </article>
+                      </div>
+                    ) : (
+                      <p className="panel-subtitle">{text.interpretHint}</p>
+                    )}
+                  </section>
+
+                  <div className="detail-grid">
+                    <article className="detail-item">
+                      <p>{text.publisher}</p>
+                      <strong>{selectedSkill.publisher}</strong>
+                    </article>
+                    <article className="detail-item">
+                      <p>{text.recommendedVersion}</p>
+                      <strong>{getPreferredVersion(selectedSkill)}</strong>
+                    </article>
+                    <article className="detail-item">
+                      <p>{text.availableVersions}</p>
+                      <strong>{getAvailableVersions(selectedSkill).join(" / ") || "-"}</strong>
+                    </article>
+                    <article className="detail-item">
+                      <p>{text.source}</p>
+                      <strong>{selectedSkill.sourceId}</strong>
+                    </article>
+                  </div>
+                </aside>
               </div>
-              <div className="skill-detail-header-actions">
-                <button className="btn btn-primary" onClick={() => void doInstall(selectedSkill)}>
-                  {text.installSkill}
-                </button>
-                <button className="btn btn-ghost" onClick={() => setSelectedSkill(null)}>
-                  {text.close}
-                </button>
-              </div>
-            </header>
+            );
 
-            <div className="skill-detail-kpis">
-              <span className="skill-detail-pill">{text.publisher}: {selectedSkill.publisher}</span>
-              <span className="skill-detail-pill">{text.source}: {selectedSkill.sourceId}</span>
-              <span className="skill-detail-pill">{text.recommendedVersion}: {getPreferredVersion(selectedSkill)}</span>
-              <span className={`skill-detail-pill health health-${selectedSkill.sourceHealth}`}>
-                {text.sourceHealth}: {formatSourceHealth(selectedSkill.sourceHealth)}
-              </span>
-            </div>
-
-            <p className="skill-detail-lead">{selectedSkill.description ?? text.detailFallback}</p>
-
-            <section className="interpret-panel">
-              <div className="interpret-header">
-                <h4>{text.interpretTitle}</h4>
-                <button
-                  className="btn btn-secondary"
-                  onClick={() => setInterpretation(buildSkillInterpretation(selectedSkill, locale))}
-                >
-                  {interpretation ? text.refreshInterpret : text.oneClickInterpret}
-                </button>
-              </div>
-              {interpretation ? (
-                <div className="interpret-content">
-                  <article className="interpret-card interpret-card-wide">
-                    <h5>{text.interpretSummary}</h5>
-                    <p>{interpretation.summary}</p>
-                  </article>
-                  <article className="interpret-card">
-                    <h5>{text.interpretScenarios}</h5>
-                    <ul className="interpret-list">
-                      {interpretation.scenarios.map((item) => (
-                        <li key={`scenario:${item}`}>{item}</li>
-                      ))}
-                    </ul>
-                  </article>
-                  <article className="interpret-card">
-                    <h5>{text.interpretTriggers}</h5>
-                    <ul className="interpret-list">
-                      {interpretation.triggers.map((item) => (
-                        <li key={`trigger:${item}`}>{item}</li>
-                      ))}
-                    </ul>
-                  </article>
-                  <article className="interpret-card">
-                    <h5>{text.interpretSuggestions}</h5>
-                    <ul className="interpret-list">
-                      {interpretation.suggestions.map((item) => (
-                        <li key={`suggestion:${item}`}>{item}</li>
-                      ))}
-                    </ul>
-                  </article>
-                </div>
-              ) : (
-                <p className="panel-subtitle">{text.interpretHint}</p>
-              )}
-            </section>
-
-            <div className="detail-grid">
-              <article className="detail-item">
-                <p>{text.publisher}</p>
-                <strong>{selectedSkill.publisher}</strong>
-              </article>
-              <article className="detail-item">
-                <p>{text.recommendedVersion}</p>
-                <strong>{getPreferredVersion(selectedSkill)}</strong>
-              </article>
-              <article className="detail-item">
-                <p>{text.availableVersions}</p>
-                <strong>{getAvailableVersions(selectedSkill).join(" / ") || "-"}</strong>
-              </article>
-              <article className="detail-item">
-                <p>{text.source}</p>
-                <strong>{selectedSkill.sourceId}</strong>
-              </article>
-            </div>
-
-          </aside>
-        </div>
-      ) : null}
+            return typeof document !== "undefined" ? createPortal(modal, document.body) : modal;
+          })()
+        : null}
     </section>
   );
 }
