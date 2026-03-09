@@ -1,0 +1,22 @@
+name: beta-release-checks
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  checks:
+    if: startsWith(github.event.pull_request.title, 'beta-release:')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Schema checks
+        run: node scripts/check-registry-schemas.mjs
+      - name: Regression suite
+        run: node scripts/run-regression-suite.mjs
+      - name: Security scan
+        run: node scripts/run-security-scan.mjs

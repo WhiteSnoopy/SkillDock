@@ -1,0 +1,20 @@
+pub fn register_desktop_commands() -> tauri::Builder<tauri::Wry> {
+    tauri::Builder::default().invoke_handler(tauri::generate_handler![
+        crate::commands::desktop::local_api_health,
+        crate::commands::desktop::list_repo_sources,
+        crate::commands::desktop::check_repo_source,
+        crate::commands::desktop::upsert_repo_source,
+        crate::commands::desktop::delete_repo_source,
+        crate::commands::desktop::sync_market_index,
+        crate::commands::desktop::get_market_skills,
+        crate::commands::desktop::install_market_skill,
+        crate::commands::desktop::list_local_skills,
+        crate::commands::desktop::remove_local_skill_record,
+        crate::commands::desktop::install_local_skill_for_provider,
+        crate::commands::desktop::scan_local_skills_from_disk,
+        crate::commands::desktop::pick_skill_folder,
+        crate::commands::desktop::dry_run_beta_release,
+        crate::commands::desktop::create_beta_release_pr,
+        crate::commands::desktop::create_promote_stable_pr,
+    ])
+}

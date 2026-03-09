@@ -1,4 +1,4 @@
-# SKT Skill Agent (Desktop)
+# SkillDock Skill Agent (Desktop)
 
 面向 Skill 市场、安装管理、发布流程的一体化桌面应用。  
 当前实现基于 `React + TypeScript + Vite + Tauri`，通过 Tauri Bridge 调用本地 API（默认 `127.0.0.1:2027`）完成业务操作。
@@ -117,9 +117,9 @@ pnpm tauri:build
 
 发布相关：
 
-- `SKT_LOCAL_API_BASE`：Tauri 到本地 API 的基地址（默认 `http://127.0.0.1:2027`）
-- `SKT_GITHUB_TOKEN` / `GITHUB_TOKEN` / `GH_TOKEN`：发布 PR 鉴权
-- `SKT_RELEASE_REPO_URL` / `SKT_RELEASE_REPO_BRANCH`：发布目标仓库与分支
+- `SkillDock_LOCAL_API_BASE`：Tauri 到本地 API 的基地址（默认 `http://127.0.0.1:2027`）
+- `SkillDock_GITHUB_TOKEN` / `GITHUB_TOKEN` / `GH_TOKEN`：发布 PR 鉴权
+- `SkillDock_RELEASE_REPO_URL` / `SkillDock_RELEASE_REPO_BRANCH`：发布目标仓库与分支
 
 ## 7. 测试与治理
 

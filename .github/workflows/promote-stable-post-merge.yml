@@ -1,0 +1,24 @@
+name: promote-stable-post-merge
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  post-merge-update:
+    if: github.event.pull_request.merged == true && startsWith(github.event.pull_request.title, 'promote-stable:')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update stable pointer and release audit
+        run: node scripts/post-merge-promote-stable-update.mjs
+      - name: Commit post-merge updates
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add registry/skills/*/channels.json registry/skills/*/releases/*.json
+          git diff --cached --quiet || git commit -m "chore: update stable pointer after merged promote-stable PR"
+          git push
