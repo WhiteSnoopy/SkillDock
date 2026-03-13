@@ -22,6 +22,7 @@ const PERSIST_DIR = path.join(PROJECT_ROOT, ".runtime", "desktop-stack", "local-
 const SOURCES_STATE_FILE = path.join(PERSIST_DIR, "sources.json");
 const INSTALLATIONS_STATE_FILE = path.join(PERSIST_DIR, "installations.json");
 const GENERAL_SETTINGS_STATE_FILE = path.join(PERSIST_DIR, "general-settings.json");
+const LLM_PROVIDERS_STATE_FILE = path.join(PERSIST_DIR, "llm-providers.json");
 const SKILLS_SSOT_DIR = process.env.SkillDock_SKILLS_SSOT_DIR || path.join(os.homedir(), ".skilldock-skill-agent", "skills");
 const SKILLS_TARGET_DIR = process.env.SkillDock_SKILLS_TARGET_DIR || path.join(os.homedir(), ".codex", "skills");
 const DEFAULT_RELEASE_REPO_URL = process.env.SkillDock_RELEASE_REPO_URL || "https://github.com/WhiteSnoopy/Skill-Manage";
@@ -137,6 +138,130 @@ async function persistGeneralSettings() {
     `${JSON.stringify({ settings: generalSettings }, null, 2)}\n`,
     "utf8"
   );
+}
+
+/* ── LLM Provider Settings ──────────────────────────────────── */
+
+const LLM_PROVIDER_DEFAULTS = Object.freeze({
+  claude:     { label: "Claude",      model: "claude-sonnet-4-20250514",   baseUrl: "" },
+  openai:     { label: "OpenAI",      model: "gpt-4o",                    baseUrl: "https://api.openai.com/v1" },
+  deepseek:   { label: "DeepSeek",    model: "deepseek-chat",             baseUrl: "https://api.deepseek.com" },
+  openrouter: { label: "OpenRouter",  model: "anthropic/claude-sonnet-4", baseUrl: "https://openrouter.ai/api/v1" },
+  glm:        { label: "GLM (Zhipu)", model: "glm-4-flash",              baseUrl: "https://open.bigmodel.cn/api/paas/v4" },
+  kimi:       { label: "Kimi",        model: "moonshot-v1-128k",          baseUrl: "https://api.moonshot.cn/v1" },
+});
+
+const API_KEY_MASK = "***configured***";
+
+const llmSettings = {
+  activeProviderId: null,
+  providers: []
+};
+
+function maskLlmProvider(provider) {
+  return {
+    ...provider,
+    apiKey: provider.apiKey ? API_KEY_MASK : ""
+  };
+}
+
+function randomHex(len) {
+  const chars = "0123456789abcdef";
+  let result = "";
+  for (let i = 0; i < len; i++) result += chars[Math.floor(Math.random() * 16)];
+  return result;
+}
+
+async function loadPersistedLlmSettings() {
+  try {
+    const raw = await readFile(LLM_PROVIDERS_STATE_FILE, "utf8");
+    const parsed = JSON.parse(raw);
+    llmSettings.activeProviderId = parsed?.activeProviderId ?? null;
+    llmSettings.providers = Array.isArray(parsed?.providers) ? parsed.providers : [];
+    console.log(`[local-api] loaded ${llmSettings.providers.length} persisted LLM provider(s)`);
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      console.warn("[local-api] failed to load persisted LLM settings:", error?.message ?? error);
+    }
+  }
+}
+
+async function persistLlmSettings() {
+  await mkdir(PERSIST_DIR, { recursive: true });
+  await writeFile(
+    LLM_PROVIDERS_STATE_FILE,
+    `${JSON.stringify(llmSettings, null, 2)}\n`,
+    "utf8"
+  );
+}
+
+async function testProviderConnection(provider) {
+  const startTime = Date.now();
+  try {
+    if (!provider.apiKey) {
+      return { success: false, error: "API Key not configured" };
+    }
+
+    const testModel = provider.model;
+    const rawBase = (provider.baseUrl || "https://api.anthropic.com").replace(/\/$/, "");
+    const endpoint = rawBase.endsWith("/v1")
+      ? `${rawBase}/messages`
+      : `${rawBase}/v1/messages`;
+
+    const headers = {
+      "Content-Type": "application/json",
+      "Accept": "text/event-stream",
+      "x-api-key": provider.apiKey,
+      "anthropic-version": "2023-06-01",
+      "Authorization": `Bearer ${provider.apiKey}`,
+    };
+
+    const body = JSON.stringify({
+      model: testModel,
+      max_tokens: 1,
+      messages: [{ role: "user", content: "hi" }],
+      stream: true,
+    });
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers,
+      body,
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+    const latency = Date.now() - startTime;
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorMessage = `HTTP ${response.status}`;
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorMessage = errorJson.error?.message || errorJson.message || errorMessage;
+      } catch { /* use default */ }
+      return { success: false, error: "Request failed", details: errorMessage, latency };
+    }
+
+    const reader = response.body?.getReader();
+    if (reader) {
+      const { done } = await reader.read();
+      if (!done) reader.cancel();
+    }
+
+    return { success: true, latency, model: testModel, details: `Connected (${latency}ms)` };
+  } catch (error) {
+    const latency = Date.now() - startTime;
+    return {
+      success: false,
+      error: "Connection failed",
+      details: error instanceof Error ? error.message : "Unknown error",
+      latency,
+    };
+  }
 }
 
 function getReleaseRepoConfig() {
@@ -2047,6 +2172,115 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    /* ── LLM Provider endpoints ───────────────────────────────── */
+
+    const llmProvidersPath = "/api/settings/llm/providers";
+    const llmProviderIdMatch = req.url?.match(/^\/api\/settings\/llm\/providers\/([^/]+)$/);
+    const llmProviderActivateMatch = req.url?.match(/^\/api\/settings\/llm\/providers\/([^/]+)\/activate$/);
+    const llmProviderTestMatch = req.url?.match(/^\/api\/settings\/llm\/providers\/([^/]+)\/test$/);
+
+    if (req.method === "GET" && req.url === llmProvidersPath) {
+      sendJson(res, 200, {
+        activeProviderId: llmSettings.activeProviderId,
+        providers: llmSettings.providers.map(maskLlmProvider)
+      });
+      return;
+    }
+
+    if (req.method === "POST" && req.url === llmProvidersPath) {
+      const body = await readBody(req);
+      const p = body?.provider ?? body;
+      if (!p?.name || !p?.apiKey || !p?.model || !p?.provider) {
+        sendJson(res, 422, { code: "VALIDATION_ERROR", message: "name, provider, apiKey, model are required" });
+        return;
+      }
+      const now = Date.now();
+      const newProvider = {
+        id: `provider_${now}_${randomHex(7)}`,
+        name: String(p.name),
+        provider: String(p.provider),
+        apiKey: String(p.apiKey),
+        model: String(p.model),
+        baseUrl: p.baseUrl ? String(p.baseUrl) : undefined,
+        enabled: true,
+        createdAt: now,
+        updatedAt: now,
+      };
+      llmSettings.providers.push(newProvider);
+      if (llmSettings.providers.length === 1) {
+        llmSettings.activeProviderId = newProvider.id;
+      }
+      await persistLlmSettings();
+      sendJson(res, 201, maskLlmProvider(newProvider));
+      return;
+    }
+
+    if (req.method === "PUT" && llmProviderIdMatch) {
+      const id = llmProviderIdMatch[1];
+      const idx = llmSettings.providers.findIndex((p) => p.id === id);
+      if (idx === -1) {
+        sendJson(res, 404, { code: "NOT_FOUND", message: `Provider not found: ${id}` });
+        return;
+      }
+      const body = await readBody(req);
+      const updates = body?.updates ?? body;
+      const existing = llmSettings.providers[idx];
+      if (updates.name !== undefined) existing.name = String(updates.name);
+      if (updates.provider !== undefined) existing.provider = String(updates.provider);
+      if (updates.model !== undefined) existing.model = String(updates.model);
+      if (updates.baseUrl !== undefined) existing.baseUrl = updates.baseUrl ? String(updates.baseUrl) : undefined;
+      if (updates.apiKey !== undefined && updates.apiKey !== API_KEY_MASK) {
+        existing.apiKey = String(updates.apiKey);
+      }
+      existing.updatedAt = Date.now();
+      await persistLlmSettings();
+      sendJson(res, 200, maskLlmProvider(existing));
+      return;
+    }
+
+    if (req.method === "DELETE" && llmProviderIdMatch) {
+      const id = llmProviderIdMatch[1];
+      const idx = llmSettings.providers.findIndex((p) => p.id === id);
+      if (idx === -1) {
+        sendJson(res, 404, { code: "NOT_FOUND", message: `Provider not found: ${id}` });
+        return;
+      }
+      llmSettings.providers.splice(idx, 1);
+      if (llmSettings.activeProviderId === id) {
+        llmSettings.activeProviderId = llmSettings.providers.length > 0
+          ? llmSettings.providers[0].id
+          : null;
+      }
+      await persistLlmSettings();
+      sendJson(res, 200, { ok: true });
+      return;
+    }
+
+    if (req.method === "POST" && llmProviderActivateMatch) {
+      const id = llmProviderActivateMatch[1];
+      const exists = llmSettings.providers.some((p) => p.id === id);
+      if (!exists) {
+        sendJson(res, 404, { code: "NOT_FOUND", message: `Provider not found: ${id}` });
+        return;
+      }
+      llmSettings.activeProviderId = id;
+      await persistLlmSettings();
+      sendJson(res, 200, { ok: true, activeProviderId: id });
+      return;
+    }
+
+    if (req.method === "POST" && llmProviderTestMatch) {
+      const id = llmProviderTestMatch[1];
+      const provider = llmSettings.providers.find((p) => p.id === id);
+      if (!provider) {
+        sendJson(res, 404, { code: "NOT_FOUND", message: `Provider not found: ${id}` });
+        return;
+      }
+      const result = await testProviderConnection(provider);
+      sendJson(res, 200, result);
+      return;
+    }
+
     sendJson(res, 404, {
       code: "NOT_FOUND",
       message: `Route not found: ${req.method} ${req.url}`
@@ -2066,6 +2300,7 @@ server.on("listening", () => {
 await loadPersistedSources();
 await loadPersistedInstallations();
 await loadPersistedGeneralSettings();
+await loadPersistedLlmSettings();
 server.listen(port, host);
 
 function shutdown(signal) {

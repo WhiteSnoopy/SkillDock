@@ -9,5 +9,9 @@ src-tauri/target/
 *.log
 *.pid
 
+# Docs (local only)
+docs/
+
 # OS artifacts
 .DS_Store
+.claude

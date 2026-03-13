@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { KeyboardEvent } from "react";
-import { fetchGeneralSettings, updateGeneralSettings } from "../lib/desktop-api";
+import { fetchGeneralSettings, updateGeneralSettings, fetchLlmProviders, addLlmProvider, updateLlmProvider, deleteLlmProvider, activateLlmProvider, testLlmProvider } from "../lib/desktop-api";
+import type { LlmProviderConfig, LlmSettings, LlmProviderTestResult } from "../types/models";
 import { MarketPage } from "../pages/market-page";
 import { LocalSkillsPage } from "../pages/local-skills-page";
 import { SkillCampPage } from "../pages/skill-camp-page";
@@ -42,7 +43,33 @@ const APP_TEXT = {
     settingsSaved: "已保存，后续发布将使用该仓库地址。",
     settingsLoadFailed: "加载通用配置失败",
     settingsInvalidRepoUrl: "请输入有效的 GitHub HTTPS 仓库地址",
-    close: "关闭"
+    close: "关闭",
+    generalTab: "通用",
+    llmTab: "LLM",
+    llmAddProvider: "添加 Provider",
+    llmProviderName: "名称",
+    llmProviderType: "Provider 类型",
+    llmApiKey: "API Key",
+    llmModel: "Model",
+    llmBaseUrl: "Base URL（可选）",
+    llmSave: "保存",
+    llmCancel: "取消",
+    llmActivate: "激活",
+    llmTest: "测试",
+    llmEdit: "编辑",
+    llmDelete: "删除",
+    llmActive: "Active",
+    llmTesting: "测试中...",
+    llmTestSuccess: (ms: number) => `连接成功 (${ms}ms)`,
+    llmTestFailed: "连接失败",
+    llmDeleteConfirm: (name: string) => `确认删除「${name}」？`,
+    llmSaved: "Provider 已保存",
+    llmDeleted: "Provider 已删除",
+    llmActivated: "Provider 已激活",
+    llmNoProviders: "暂无 Provider 配置，点击下方按钮添加",
+    llmNameRequired: "请填写名称",
+    llmApiKeyRequired: "请填写 API Key",
+    llmModelRequired: "请填写 Model"
   },
   en: {
     heroKicker: "SkillDock Workspace",
@@ -71,9 +98,62 @@ const APP_TEXT = {
     settingsSaved: "Saved. Subsequent releases will use this repository URL.",
     settingsLoadFailed: "Failed to load general settings",
     settingsInvalidRepoUrl: "Enter a valid GitHub HTTPS repository URL",
-    close: "Close"
+    close: "Close",
+    generalTab: "General",
+    llmTab: "LLM",
+    llmAddProvider: "Add Provider",
+    llmProviderName: "Name",
+    llmProviderType: "Provider Type",
+    llmApiKey: "API Key",
+    llmModel: "Model",
+    llmBaseUrl: "Base URL (optional)",
+    llmSave: "Save",
+    llmCancel: "Cancel",
+    llmActivate: "Activate",
+    llmTest: "Test",
+    llmEdit: "Edit",
+    llmDelete: "Delete",
+    llmActive: "Active",
+    llmTesting: "Testing...",
+    llmTestSuccess: (ms: number) => `Connected (${ms}ms)`,
+    llmTestFailed: "Connection failed",
+    llmDeleteConfirm: (name: string) => `Delete "${name}"?`,
+    llmSaved: "Provider saved",
+    llmDeleted: "Provider deleted",
+    llmActivated: "Provider activated",
+    llmNoProviders: "No providers configured. Click below to add one.",
+    llmNameRequired: "Name is required",
+    llmApiKeyRequired: "API Key is required",
+    llmModelRequired: "Model is required"
   }
 } as const;
+
+type SettingsTab = "general" | "llm";
+
+const LLM_PROVIDER_LABELS: Record<string, string> = {
+  claude: "Claude", openai: "OpenAI", deepseek: "DeepSeek",
+  openrouter: "OpenRouter", glm: "GLM", kimi: "Kimi",
+};
+
+const LLM_PROVIDER_DEFAULTS: Record<string, { model: string; baseUrl: string }> = {
+  claude:     { model: "claude-sonnet-4-20250514",   baseUrl: "" },
+  openai:     { model: "gpt-4o",                    baseUrl: "https://api.openai.com/v1" },
+  deepseek:   { model: "deepseek-chat",             baseUrl: "https://api.deepseek.com" },
+  openrouter: { model: "anthropic/claude-sonnet-4", baseUrl: "https://openrouter.ai/api/v1" },
+  glm:        { model: "glm-4-flash",              baseUrl: "https://open.bigmodel.cn/api/paas/v4" },
+  kimi:       { model: "moonshot-v1-128k",          baseUrl: "https://api.moonshot.cn/v1" },
+};
+
+const LLM_PROVIDER_MODELS: Record<string, string[]> = {
+  claude:     ["claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022"],
+  openai:     ["gpt-4o", "gpt-4o-mini", "gpt-4.1", "o3", "o4-mini"],
+  deepseek:   ["deepseek-chat", "deepseek-reasoner"],
+  openrouter: ["anthropic/claude-sonnet-4", "anthropic/claude-opus-4", "openai/gpt-4o"],
+  glm:        ["glm-4-plus", "glm-4", "glm-4-air", "glm-4-flash"],
+  kimi:       ["moonshot-v1-128k", "moonshot-v1-32k", "moonshot-v1-8k"],
+};
+
+const LLM_PROVIDER_TYPES = Object.keys(LLM_PROVIDER_LABELS);
 
 function getErrorMessage(raw: unknown, fallback: string): string {
   if (raw && typeof raw === "object" && "message" in raw) {
@@ -143,6 +223,16 @@ export function App() {
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsError, setSettingsError] = useState("");
   const [settingsSaved, setSettingsSaved] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("general");
+  const [llmSettings, setLlmSettings] = useState<LlmSettings>({ activeProviderId: null, providers: [] });
+  const [llmLoading, setLlmLoading] = useState(false);
+  const [llmError, setLlmError] = useState("");
+  const [llmSuccess, setLlmSuccess] = useState("");
+  const [isEditingProvider, setIsEditingProvider] = useState(false);
+  const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
+  const [providerForm, setProviderForm] = useState({ name: "", provider: "claude", apiKey: "", model: "claude-sonnet-4-20250514", baseUrl: "" });
+  const [testingProviderId, setTestingProviderId] = useState<string | null>(null);
+  const [testResults, setTestResults] = useState<Record<string, LlmProviderTestResult>>({});
   const text = APP_TEXT[locale];
   const tabs = useMemo(() => PAGE_ORDER.map((key) => ({
     key,
@@ -230,6 +320,121 @@ export function App() {
     }
   };
 
+  const loadLlmProviders = async () => {
+    setLlmLoading(true);
+    setLlmError("");
+    try {
+      const data = await fetchLlmProviders();
+      setLlmSettings(data);
+    } catch (error) {
+      setLlmError(getErrorMessage(error, "Failed to load LLM providers"));
+    } finally {
+      setLlmLoading(false);
+    }
+  };
+
+  const handleActivateProvider = async (id: string) => {
+    setLlmError("");
+    try {
+      await activateLlmProvider(id);
+      await loadLlmProviders();
+      setLlmSuccess(text.llmActivated);
+      setTimeout(() => setLlmSuccess(""), 2400);
+    } catch (error) {
+      setLlmError(getErrorMessage(error, text.llmTestFailed));
+    }
+  };
+
+  const handleDeleteProvider = async (provider: LlmProviderConfig) => {
+    if (!confirm(text.llmDeleteConfirm(provider.name))) return;
+    setLlmError("");
+    try {
+      await deleteLlmProvider(provider.id);
+      await loadLlmProviders();
+      setLlmSuccess(text.llmDeleted);
+      setTimeout(() => setLlmSuccess(""), 2400);
+    } catch (error) {
+      setLlmError(getErrorMessage(error, "Delete failed"));
+    }
+  };
+
+  const handleTestProvider = async (id: string) => {
+    setTestingProviderId(id);
+    try {
+      const result = await testLlmProvider(id);
+      setTestResults((prev) => ({ ...prev, [id]: result }));
+    } catch (error) {
+      setTestResults((prev) => ({
+        ...prev,
+        [id]: { success: false, error: text.llmTestFailed, details: getErrorMessage(error, "Unknown error") },
+      }));
+    } finally {
+      setTestingProviderId(null);
+    }
+  };
+
+  const handleAddProvider = () => {
+    setEditingProviderId(null);
+    setProviderForm({ name: "", provider: "claude", apiKey: "", model: LLM_PROVIDER_DEFAULTS.claude.model, baseUrl: "" });
+    setIsEditingProvider(true);
+    setLlmError("");
+  };
+
+  const handleEditProvider = (p: LlmProviderConfig) => {
+    setEditingProviderId(p.id);
+    setProviderForm({ name: p.name, provider: p.provider, apiKey: p.apiKey, model: p.model, baseUrl: p.baseUrl ?? "" });
+    setIsEditingProvider(true);
+    setLlmError("");
+  };
+
+  const handleProviderTypeChange = (providerType: string) => {
+    const defaults = LLM_PROVIDER_DEFAULTS[providerType] ?? { model: "", baseUrl: "" };
+    setProviderForm((prev) => ({ ...prev, provider: providerType, model: defaults.model, baseUrl: defaults.baseUrl }));
+  };
+
+  const handleSaveProvider = async () => {
+    if (!providerForm.name.trim()) { setLlmError(text.llmNameRequired); return; }
+    if (!providerForm.apiKey.trim() && !editingProviderId) { setLlmError(text.llmApiKeyRequired); return; }
+    if (!providerForm.model.trim()) { setLlmError(text.llmModelRequired); return; }
+
+    setLlmLoading(true);
+    setLlmError("");
+    try {
+      if (editingProviderId) {
+        await updateLlmProvider(editingProviderId, {
+          name: providerForm.name,
+          provider: providerForm.provider as LlmProviderConfig["provider"],
+          apiKey: providerForm.apiKey,
+          model: providerForm.model,
+          baseUrl: providerForm.baseUrl || undefined,
+        });
+      } else {
+        await addLlmProvider({
+          name: providerForm.name,
+          provider: providerForm.provider,
+          apiKey: providerForm.apiKey,
+          model: providerForm.model,
+          baseUrl: providerForm.baseUrl || undefined,
+        });
+      }
+      setIsEditingProvider(false);
+      setEditingProviderId(null);
+      await loadLlmProviders();
+      setLlmSuccess(text.llmSaved);
+      setTimeout(() => setLlmSuccess(""), 2400);
+    } catch (error) {
+      setLlmError(getErrorMessage(error, "Save failed"));
+    } finally {
+      setLlmLoading(false);
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditingProvider(false);
+    setEditingProviderId(null);
+    setLlmError("");
+  };
+
   return (
     <main className="layout layout-board">
       <aside className="shell-rail" aria-label={text.navAria}>
@@ -302,53 +507,184 @@ export function App() {
                 {text.close}
               </button>
             </header>
-            <div className="settings-row">
-              <p>{text.language}</p>
-              <div className="lang-toggle" role="group" aria-label={text.language}>
-                <button
-                  className={locale === "zh" ? "btn btn-ghost btn-lang btn-lang-active" : "btn btn-ghost btn-lang"}
-                  onClick={() => setLocale("zh")}
-                >
-                  中
-                </button>
-                <button
-                  className={locale === "en" ? "btn btn-ghost btn-lang btn-lang-active" : "btn btn-ghost btn-lang"}
-                  onClick={() => setLocale("en")}
-                >
-                  EN
-                </button>
-              </div>
+            <div className="settings-tabs">
+              <button
+                className={settingsTab === "general" ? "settings-tab settings-tab-active" : "settings-tab"}
+                onClick={() => setSettingsTab("general")}
+              >
+                {text.generalTab}
+              </button>
+              <button
+                className={settingsTab === "llm" ? "settings-tab settings-tab-active" : "settings-tab"}
+                onClick={() => { setSettingsTab("llm"); void loadLlmProviders(); }}
+              >
+                {text.llmTab}
+              </button>
             </div>
-            <div className="settings-row">
-              <p>{text.teamRepoHint}</p>
-              <label className="field">
-                <span>{text.teamRepoUrl}</span>
-                <input
-                  value={teamRepoUrl}
-                  placeholder="https://github.com/org/repo"
-                  onChange={(event) => {
-                    setTeamRepoUrl(event.target.value);
-                    setSettingsSaved(false);
-                    if (settingsError) setSettingsError("");
-                  }}
-                />
-              </label>
-              <div className="settings-actions">
-                <button
-                  className="btn btn-primary"
-                  onClick={() => void saveGeneralSettings()}
-                  disabled={settingsSaving}
-                >
-                  {settingsSaving ? text.settingsSaving : text.settingsSave}
-                </button>
+
+            {settingsTab === "general" ? (
+              <>
+                <div className="settings-row">
+                  <p>{text.language}</p>
+                  <div className="lang-toggle" role="group" aria-label={text.language}>
+                    <button
+                      className={locale === "zh" ? "btn btn-ghost btn-lang btn-lang-active" : "btn btn-ghost btn-lang"}
+                      onClick={() => setLocale("zh")}
+                    >
+                      中
+                    </button>
+                    <button
+                      className={locale === "en" ? "btn btn-ghost btn-lang btn-lang-active" : "btn btn-ghost btn-lang"}
+                      onClick={() => setLocale("en")}
+                    >
+                      EN
+                    </button>
+                  </div>
+                </div>
+                <div className="settings-row">
+                  <p>{text.teamRepoHint}</p>
+                  <label className="field">
+                    <span>{text.teamRepoUrl}</span>
+                    <input
+                      value={teamRepoUrl}
+                      placeholder="https://github.com/org/repo"
+                      onChange={(event) => {
+                        setTeamRepoUrl(event.target.value);
+                        setSettingsSaved(false);
+                        if (settingsError) setSettingsError("");
+                      }}
+                    />
+                  </label>
+                  <div className="settings-actions">
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => void saveGeneralSettings()}
+                      disabled={settingsSaving}
+                    >
+                      {settingsSaving ? text.settingsSaving : text.settingsSave}
+                    </button>
+                  </div>
+                  {settingsError ? (
+                    <p className="settings-feedback settings-feedback-error">{settingsError}</p>
+                  ) : null}
+                  {settingsSaved ? (
+                    <p className="settings-feedback settings-feedback-ok">{text.settingsSaved}</p>
+                  ) : null}
+                </div>
+              </>
+            ) : (
+              <div className="llm-tab-content">
+                {llmError ? <p className="settings-feedback settings-feedback-error">{llmError}</p> : null}
+                {llmSuccess ? <p className="settings-feedback settings-feedback-ok">{llmSuccess}</p> : null}
+
+                {isEditingProvider ? (
+                  <div className="llm-form">
+                    <label className="llm-form-field">
+                      <span>{text.llmProviderName}</span>
+                      <input
+                        value={providerForm.name}
+                        onChange={(e) => setProviderForm((f) => ({ ...f, name: e.target.value }))}
+                        placeholder="e.g. claude-sonnet"
+                      />
+                    </label>
+                    <label className="llm-form-field">
+                      <span>{text.llmProviderType}</span>
+                      <select
+                        value={providerForm.provider}
+                        onChange={(e) => handleProviderTypeChange(e.target.value)}
+                      >
+                        {LLM_PROVIDER_TYPES.map((key) => (
+                          <option key={key} value={key}>{LLM_PROVIDER_LABELS[key]}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="llm-form-field">
+                      <span>{text.llmApiKey}</span>
+                      <input
+                        type="password"
+                        value={providerForm.apiKey}
+                        onChange={(e) => setProviderForm((f) => ({ ...f, apiKey: e.target.value }))}
+                        placeholder={editingProviderId ? "***configured***" : "sk-..."}
+                      />
+                    </label>
+                    <label className="llm-form-field">
+                      <span>{text.llmModel}</span>
+                      <input
+                        list={`models-${providerForm.provider}`}
+                        value={providerForm.model}
+                        onChange={(e) => setProviderForm((f) => ({ ...f, model: e.target.value }))}
+                      />
+                      <datalist id={`models-${providerForm.provider}`}>
+                        {(LLM_PROVIDER_MODELS[providerForm.provider] ?? []).map((m) => (
+                          <option key={m} value={m} />
+                        ))}
+                      </datalist>
+                    </label>
+                    <label className="llm-form-field">
+                      <span>{text.llmBaseUrl}</span>
+                      <input
+                        value={providerForm.baseUrl}
+                        onChange={(e) => setProviderForm((f) => ({ ...f, baseUrl: e.target.value }))}
+                        placeholder={LLM_PROVIDER_DEFAULTS[providerForm.provider]?.baseUrl || "https://api.anthropic.com"}
+                      />
+                    </label>
+                    <div className="llm-form-actions">
+                      <button className="btn btn-ghost" onClick={handleCancelEdit}>{text.llmCancel}</button>
+                      <button className="btn btn-primary" onClick={() => void handleSaveProvider()} disabled={llmLoading}>
+                        {text.llmSave}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {llmSettings.providers.length === 0 && !llmLoading ? (
+                      <p className="llm-empty">{text.llmNoProviders}</p>
+                    ) : (
+                      <div className="llm-provider-list">
+                        {llmSettings.providers.map((p) => (
+                          <div key={p.id} className="llm-provider-card">
+                            <div className="llm-provider-avatar">{(LLM_PROVIDER_LABELS[p.provider] ?? p.provider)[0].toUpperCase()}</div>
+                            <div className="llm-provider-info">
+                              <div className="llm-provider-name">
+                                {p.name}
+                                {llmSettings.activeProviderId === p.id ? (
+                                  <span className="llm-provider-badge">{text.llmActive}</span>
+                                ) : null}
+                              </div>
+                              <div className="llm-provider-meta">{LLM_PROVIDER_LABELS[p.provider] ?? p.provider} · {p.apiKey || "—"}</div>
+                            </div>
+                            <div className="llm-provider-actions">
+                              {llmSettings.activeProviderId !== p.id ? (
+                                <button className="btn btn-ghost btn-sm" onClick={() => void handleActivateProvider(p.id)}>{text.llmActivate}</button>
+                              ) : null}
+                              <button
+                                className="btn btn-ghost btn-sm"
+                                onClick={() => void handleTestProvider(p.id)}
+                                disabled={testingProviderId === p.id}
+                              >
+                                {testingProviderId === p.id ? text.llmTesting : text.llmTest}
+                              </button>
+                              <button className="btn btn-ghost btn-sm" onClick={() => handleEditProvider(p)}>{text.llmEdit}</button>
+                              <button className="btn btn-ghost btn-sm" onClick={() => void handleDeleteProvider(p)}>{text.llmDelete}</button>
+                            </div>
+                            {testResults[p.id] ? (
+                              <div className={`llm-provider-test-result ${testResults[p.id].success ? "llm-test-ok" : "llm-test-fail"}`}>
+                                {testResults[p.id].success
+                                  ? text.llmTestSuccess(testResults[p.id].latency ?? 0)
+                                  : `${testResults[p.id].error ?? text.llmTestFailed}${testResults[p.id].details ? ` — ${testResults[p.id].details}` : ""}`}
+                              </div>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <button className="btn btn-primary llm-add-btn" onClick={handleAddProvider}>
+                      {text.llmAddProvider}
+                    </button>
+                  </>
+                )}
               </div>
-              {settingsError ? (
-                <p className="settings-feedback settings-feedback-error">{settingsError}</p>
-              ) : null}
-              {settingsSaved ? (
-                <p className="settings-feedback settings-feedback-ok">{text.settingsSaved}</p>
-              ) : null}
-            </div>
+            )}
           </aside>
         </div>
       ) : null}

@@ -138,6 +138,33 @@ export interface MarketSyncSummary {
   failedSources: Array<{ sourceId: string; reason: string }>;
 }
 
+export type LlmProviderType = "claude" | "openai" | "deepseek" | "openrouter" | "glm" | "kimi";
+
+export interface LlmProviderConfig {
+  id: string;
+  name: string;
+  provider: LlmProviderType;
+  apiKey: string;
+  model: string;
+  baseUrl?: string;
+  enabled: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface LlmSettings {
+  activeProviderId: string | null;
+  providers: LlmProviderConfig[];
+}
+
+export interface LlmProviderTestResult {
+  success: boolean;
+  error?: string;
+  details?: string;
+  latency?: number;
+  model?: string;
+}
+
 export interface GuardedError {
   code:
     | "OFFLINE_BLOCKED"

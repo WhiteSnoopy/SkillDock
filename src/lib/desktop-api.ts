@@ -6,6 +6,9 @@ import type {
   InstallSkillRequest,
   InstallSkillResponse,
   InstallLocalSkillForProviderRequest,
+  LlmProviderConfig,
+  LlmProviderTestResult,
+  LlmSettings,
   LocalInstalledSkill,
   LocalSkillScanSummary,
   LocalSkillsResponse,
@@ -204,4 +207,28 @@ export async function dryRunBetaRelease(req: BetaReleaseRequest): Promise<BetaRe
 
 export async function createPromoteStablePr(req: PromoteStableRequest): Promise<{ prTitle: string; prBody: string }> {
   return invokeGuarded<{ prTitle: string; prBody: string }>("create_promote_stable_pr", { request: req });
+}
+
+export async function fetchLlmProviders(): Promise<LlmSettings> {
+  return invokeGuarded<LlmSettings>("get_llm_providers");
+}
+
+export async function addLlmProvider(provider: { name: string; provider: string; apiKey: string; model: string; baseUrl?: string }): Promise<LlmProviderConfig> {
+  return invokeGuarded<LlmProviderConfig>("add_llm_provider", { provider });
+}
+
+export async function updateLlmProvider(id: string, updates: Partial<LlmProviderConfig>): Promise<LlmProviderConfig> {
+  return invokeGuarded<LlmProviderConfig>("update_llm_provider", { id, updates });
+}
+
+export async function deleteLlmProvider(id: string): Promise<void> {
+  await invokeGuarded<void>("delete_llm_provider", { id });
+}
+
+export async function activateLlmProvider(id: string): Promise<void> {
+  await invokeGuarded<void>("activate_llm_provider", { id });
+}
+
+export async function testLlmProvider(id: string): Promise<LlmProviderTestResult> {
+  return invokeGuarded<LlmProviderTestResult>("test_llm_provider", { id });
 }

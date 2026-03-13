@@ -18,5 +18,11 @@ pub fn register_desktop_commands() -> tauri::Builder<tauri::Wry> {
         crate::commands::desktop::dry_run_beta_release,
         crate::commands::desktop::create_beta_release_pr,
         crate::commands::desktop::create_promote_stable_pr,
+        crate::commands::desktop::get_llm_providers,
+        crate::commands::desktop::add_llm_provider,
+        crate::commands::desktop::update_llm_provider,
+        crate::commands::desktop::delete_llm_provider,
+        crate::commands::desktop::activate_llm_provider,
+        crate::commands::desktop::test_llm_provider,
     ])
 }

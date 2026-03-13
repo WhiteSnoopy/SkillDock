@@ -584,3 +584,127 @@ pub async fn create_promote_stable_pr(
 
     request_local_api_with_timeout(Method::POST, "/api/release/stable/create-pr", Some(payload), 120).await
 }
+
+/* ── LLM Provider Commands ───────────────────────────────────── */
+
+async fn request_local_api_dynamic(
+    method: Method,
+    path: &str,
+    payload: Option<serde_json::Value>,
+) -> Result<serde_json::Value, GuardedResponseError> {
+    request_local_api_dynamic_with_timeout(method, path, payload, 12).await
+}
+
+async fn request_local_api_dynamic_with_timeout(
+    method: Method,
+    path: &str,
+    payload: Option<serde_json::Value>,
+    timeout_secs: u64,
+) -> Result<serde_json::Value, GuardedResponseError> {
+    let url = format!("{}{}", local_api_base(), path);
+
+    let mut request = local_api_client()
+        .request(method, &url)
+        .timeout(Duration::from_secs(timeout_secs));
+    if let Some(body) = payload {
+        request = request.json(&body);
+    }
+
+    let response = request.send().await.map_err(|error| {
+        let message = if error.is_timeout() {
+            format!("Local API request timed out after {timeout_secs}s: {url}")
+        } else {
+            format!("Local API request failed: {error}")
+        };
+        guarded_error("NETWORK_ERROR", &message)
+    })?;
+
+    let status = response.status();
+    let raw = response.text().await.map_err(|error| {
+        guarded_error(
+            "UNKNOWN",
+            &format!("Failed to read local API response: {error}"),
+        )
+    })?;
+
+    let body = serde_json::from_str::<serde_json::Value>(&raw)
+        .unwrap_or_else(|_| serde_json::json!({ "message": raw }));
+
+    if !status.is_success() {
+        let code = body
+            .get("code")
+            .and_then(|value| value.as_str())
+            .unwrap_or(match status.as_u16() {
+                403 => "OWNER_ONLY",
+                409 => "OFFLINE_BLOCKED",
+                422 => "VALIDATION_ERROR",
+                _ => "UNKNOWN",
+            });
+        let message = body
+            .get("message")
+            .and_then(|value| value.as_str())
+            .unwrap_or("Local API request failed");
+        return Err(guarded_error(code, message));
+    }
+
+    Ok(body)
+}
+
+#[tauri::command]
+pub async fn get_llm_providers() -> Result<serde_json::Value, GuardedResponseError> {
+    request_local_api(Method::GET, "/api/settings/llm/providers", None).await
+}
+
+#[tauri::command]
+pub async fn add_llm_provider(
+    provider: serde_json::Value,
+) -> Result<serde_json::Value, GuardedResponseError> {
+    let payload = serde_json::json!({ "provider": provider });
+    request_local_api(Method::POST, "/api/settings/llm/providers", Some(payload)).await
+}
+
+#[tauri::command]
+pub async fn update_llm_provider(
+    id: String,
+    updates: serde_json::Value,
+) -> Result<serde_json::Value, GuardedResponseError> {
+    if id.trim().is_empty() {
+        return Err(guarded_error("VALIDATION_ERROR", "provider id is required"));
+    }
+    let path = format!("/api/settings/llm/providers/{}", id);
+    let payload = serde_json::json!({ "updates": updates });
+    request_local_api_dynamic(Method::PUT, &path, Some(payload)).await
+}
+
+#[tauri::command]
+pub async fn delete_llm_provider(
+    id: String,
+) -> Result<serde_json::Value, GuardedResponseError> {
+    if id.trim().is_empty() {
+        return Err(guarded_error("VALIDATION_ERROR", "provider id is required"));
+    }
+    let path = format!("/api/settings/llm/providers/{}", id);
+    request_local_api_dynamic(Method::DELETE, &path, None).await
+}
+
+#[tauri::command]
+pub async fn activate_llm_provider(
+    id: String,
+) -> Result<serde_json::Value, GuardedResponseError> {
+    if id.trim().is_empty() {
+        return Err(guarded_error("VALIDATION_ERROR", "provider id is required"));
+    }
+    let path = format!("/api/settings/llm/providers/{}/activate", id);
+    request_local_api_dynamic(Method::POST, &path, Some(serde_json::json!({}))).await
+}
+
+#[tauri::command]
+pub async fn test_llm_provider(
+    id: String,
+) -> Result<serde_json::Value, GuardedResponseError> {
+    if id.trim().is_empty() {
+        return Err(guarded_error("VALIDATION_ERROR", "provider id is required"));
+    }
+    let path = format!("/api/settings/llm/providers/{}/test", id);
+    request_local_api_dynamic_with_timeout(Method::POST, &path, Some(serde_json::json!({})), 30).await
+}

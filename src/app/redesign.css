@@ -2659,3 +2659,55 @@ textarea:focus-visible {
 .release-layout-stable .release-preview-actions {
   justify-content: flex-end;
 }
+
+/* ── LLM Settings – Warm Theme ── */
+
+.settings-tabs {
+  border-bottom-color: var(--rd-line);
+}
+
+.settings-tab:hover {
+  color: var(--rd-ink-strong);
+}
+
+.settings-tab-active {
+  color: var(--rd-accent);
+  border-bottom-color: var(--rd-accent);
+}
+
+.llm-provider-card {
+  border-color: var(--rd-line);
+  background: var(--rd-panel-strong);
+}
+
+.llm-provider-avatar {
+  background: var(--rd-accent);
+}
+
+.llm-provider-badge {
+  color: var(--rd-mint);
+  border-color: rgba(106, 154, 112, 0.3);
+  background: rgba(106, 154, 112, 0.08);
+}
+
+.llm-provider-meta {
+  color: var(--rd-ink-soft);
+}
+
+.llm-test-ok {
+  color: var(--rd-mint);
+  background: rgba(106, 154, 112, 0.08);
+}
+
+.llm-test-fail {
+  color: #ab3d3d;
+  background: rgba(196, 90, 74, 0.06);
+}
+
+.llm-empty {
+  color: var(--rd-ink-soft);
+}
+
+.llm-form-field span {
+  color: var(--rd-ink-strong);
+}
